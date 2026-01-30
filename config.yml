@@ -1,0 +1,9 @@
+# Snakemake configuration for poker_chip parametric studies
+# Specify which sweep configuration to use (relative to project root)
+
+configfile: sweeps/default.yml
+
+# Optional: set default resources for cluster submission
+resources:
+  mem_mb: 4000
+  time_min: 120

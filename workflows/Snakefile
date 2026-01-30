@@ -1,0 +1,179 @@
+"""
+Snakemake workflow for parametric studies with poker_chip.py
+
+Simple, clean workflow that:
+1. Loads parameter sweeps from YAML config
+2. Runs poker_chip.py for each parameter combination
+3. Post-processes results and generates summary
+
+Usage:
+    snakemake -j 6 --profile workflows/profiles/local --configfile workflows/sweeps/ell_mesh_convergence.yml
+    snakemake --profile workflows/profiles/slurm --configfile workflows/sweeps/my_sweep.yml
+    snakemake -n --configfile workflows/sweeps/my_sweep.yml  # dry-run
+"""
+
+import itertools
+from pathlib import Path
+
+# Configuration
+configfile: "config.yml"
+
+# Paths relative to project root (one level up from workflows/)
+PROJ_ROOT = Path(workflow.basedir).parent
+SCRIPT_DIR = PROJ_ROOT / "scripts"
+SWEEP_CONFIG = config.get("configfile", str(PROJ_ROOT / "workflows" / "sweeps" / "default.yml"))
+
+
+def load_sweep_config():
+    """Load and parse sweep configuration."""
+    import sys
+    try:
+        from omegaconf import OmegaConf
+    except ImportError:
+        print("ERROR: omegaconf not installed. Run: pip install omegaconf")
+        sys.exit(1)
+    sweep_params = OmegaConf.load(SWEEP_CONFIG)
+    return sweep_params
+
+
+def get_param_combinations():
+    """Extract all parameter combinations from config."""
+    sweep_params = load_sweep_config()
+    
+    param_names = list(sweep_params.keys())
+    param_ranges = []
+    
+    for key in param_names:
+        val = sweep_params[key]
+        if isinstance(val, list):
+            param_ranges.append(val)
+        else:
+            param_ranges.append([val])
+    
+    combos = list(itertools.product(*param_ranges))
+    return param_names, combos
+
+
+def get_output_dir_name(combo_idx, param_names, param_values):
+    """Generate output directory name from parameters."""
+    params = dict(zip(param_names, param_values))
+    key_params = ["ell", "h_div", "gamma_mu", "e_c", "mu_0", "gdim"]
+    parts = [f"{k}{v:.3g}" for k, v in params.items() if k in key_params]
+    return "_".join(parts) if parts else f"sim_{combo_idx:03d}"
+
+
+# Load parameters
+def load_params_lazy():
+    """Load parameters on demand."""
+    if not hasattr(load_params_lazy, '_cached'):
+        sweep_params = load_sweep_config()
+        param_names = list(sweep_params.keys())
+        param_ranges = []
+        
+        for key in param_names:
+            val = sweep_params[key]
+            if isinstance(val, list):
+                param_ranges.append(val)
+            else:
+                param_ranges.append([val])
+        
+        combos = list(itertools.product(*param_ranges))
+        
+        load_params_lazy._cached = (param_names, combos)
+    
+    return load_params_lazy._cached
+
+# Get parameters when needed
+PARAM_NAMES, PARAM_COMBOS = load_params_lazy()
+N_SIMS = len(PARAM_COMBOS)
+OUTPUT_DIRS = [
+    get_output_dir_name(i, PARAM_NAMES, combo)
+    for i, combo in enumerate(PARAM_COMBOS)
+]
+
+
+# Main rule
+rule all:
+    input:
+        expand("results/{outdir}/{outdir}-parameters.yml", outdir=OUTPUT_DIRS),
+        "results/sweep_summary.csv"
+
+
+# Run simulation
+rule run_simulation:
+    params:
+        sim_idx=lambda wildcards: OUTPUT_DIRS.index(wildcards.outdir)
+    output:
+        params="results/{outdir}/{outdir}-parameters.yml"
+    log:
+        "results/{outdir}/{outdir}.log"
+    threads: 1
+    resources:
+        mem_mb=4000,
+        time_min=120
+    run:
+        import subprocess
+        
+        sim_idx = int(params.sim_idx)
+        param_values = PARAM_COMBOS[sim_idx]
+        combo_dict = dict(zip(PARAM_NAMES, param_values))
+        
+        cmd = [
+            "python",
+            str(SCRIPT_DIR / "poker_chip.py")
+        ]
+        
+        # Map sweep parameter names to poker_chip.py argument names
+        arg_map = {
+            "nsteps": "nsteps",
+            "h_div": "hdiv",
+            "mu_0": "mu",
+        }
+        
+        for pname, pval in combo_dict.items():
+            # Use mapped name if available, otherwise use as-is
+            arg_name = arg_map.get(pname, pname)
+            cmd.extend([f"--{arg_name}", str(pval)])
+        
+        # Add output directory
+        cmd.extend(["--outdir", f"results/{wildcards.outdir}"])
+        
+        output_dir = Path("results") / wildcards.outdir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        with open(log[0], "w") as f:
+            f.write(f"Simulation {sim_idx + 1}/{N_SIMS}\n")
+            f.write(f"Parameters: {combo_dict}\n")
+            f.write(f"Command: {' '.join(cmd)}\n\n")
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        with open(log[0], "a") as f:
+            f.write("=== STDOUT ===\n")
+            f.write(result.stdout)
+            f.write("\n=== STDERR ===\n")
+            f.write(result.stderr)
+        
+        if result.returncode != 0:
+            raise RuntimeError(f"Simulation failed. See {log[0]}")
+
+
+# Post-process
+rule postprocess:
+    input:
+        expand("results/{outdir}/{outdir}-parameters.yml", outdir=OUTPUT_DIRS)
+    output:
+        "results/sweep_summary.csv"
+    log:
+        "results/postprocess.log"
+    threads: 4
+    resources:
+        mem_mb=8000,
+        time_min=60
+    shell:
+        """
+        python {PROJ_ROOT}/scripts/postprocess_results.py \
+            --results-dir results \
+            --output-summary {{output}} \
+            > {{log}} 2>&1
+        """

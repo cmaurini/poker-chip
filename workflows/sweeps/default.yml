@@ -1,0 +1,13 @@
+# Default parametric sweep configuration
+# All parameters as single values (one simulation)
+
+gdim: 2
+nsteps: 30
+ell: 1.0
+e_c: 0.2
+gamma_mu: 2.0
+w_1: 1.0
+h_div: 3.0
+mu_0: 0.59
+kappa: 500.0
+p_cav: 1.475

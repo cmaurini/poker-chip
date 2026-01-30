@@ -17,31 +17,29 @@ from matplotlib import pyplot as plt
 import petsc4py
 import ufl
 import yaml
+from omegaconf import OmegaConf
 
 petsc4py.init(sys.argv)
 
 from dolfinx.io import XDMFFile
 from dolfinx.io.gmsh import model_to_mesh
 
-# Add subdirectories to path for imports
+# Import poker_chip package
 _script_dir = Path(__file__).parent.parent  # Go up to project root
-sys.path.insert(0, str(_script_dir / "damage"))
-sys.path.insert(0, str(_script_dir / "meshes"))
-sys.path.insert(0, str(_script_dir))
+sys.path.insert(0, str(_script_dir / "src"))
 
-# Import damage mechanics modules
-from alternate_minimization import AltMinFractureSolver as FractureSolver
-from scifem import evaluate_function
-from plots import plot_energies2, plot_AMit_load
-from utils import ColorPrint, assemble_scalar_reduce
-from petsc_solvers import SNESSolver, TAOSolver
-
-# Import mesh generation modules
-from mesh_bar import mesh_bar
-from mesh_chip import mesh_chip
-from mesh_box import box_mesh
-
-import formulas
+from poker_chip.solvers import (
+    AltMinFractureSolver as FractureSolver,
+    SNESSolver,
+    TAOSolver,
+    plot_energies2,
+    plot_AMit_load,
+    ColorPrint,
+    assemble_scalar_reduce,
+    evaluate_function,
+)
+from poker_chip.mesh import mesh_bar, mesh_chip, box_mesh
+from poker_chip import models as formulas
 
 # Configure plotting
 plt.rcParams.update({"text.usetex": True})
@@ -50,10 +48,13 @@ comm = MPI.COMM_WORLD
 
 
 # Load and parse configuration
-with open(_script_dir / "parameters.yml") as f:
-    parameters = yaml.load(f, Loader=yaml.FullLoader)
-
 parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--config",
+    default=None,
+    type=str,
+    help="Path to configuration file (YAML). If provided, loads parameters from this file instead of default parameters.yml",
+)
 parser.add_argument(
     "--output_name",
     default="poker",
@@ -147,6 +148,13 @@ parser.add_argument("--outdir", default=None, type=str, dest="outdir")
 
 args = parser.parse_args()
 
+# Load parameters from specified config or default
+if args.config:
+    ColorPrint.print_info(f"Loading configuration from: {args.config}")
+    parameters = OmegaConf.load(args.config)
+else:
+    parameters = OmegaConf.load(_script_dir / "config" / "parameters.yml")
+
 # Material parameters
 mu = args.mu_0
 k = args.kappa
@@ -170,19 +178,19 @@ ColorPrint.print_info(f"p_c = {p_c:3.3f}, p_cav = {p_cav:3.3f}")
 gamma_k = float(2 * w_1 * k / p_c**2)
 
 
-parameters["model"]["mu"] = mu
-parameters["model"]["kappa"] = k
-parameters["model"]["w_1"] = w_1
-parameters["model"]["ell"] = ell
-parameters["model"]["G_c"] = G_c
-parameters["model"]["p_cav"] = p_cav
-# parameters["model"]["gamma_p"] = gamma_p
-parameters["model"]["e_c"] = e_c
-parameters["model"]["p_c"] = p_c
-parameters["model"]["tau_c"] = tau_c
-parameters["model"]["gamma_k"] = gamma_k
-parameters["model"]["gamma_mu"] = gamma_mu
-# parameters["model"]["gamma_p"] = gamma_p
+parameters.model.mu = mu
+parameters.model.kappa = k
+parameters.model.w_1 = w_1
+parameters.model.ell = ell
+parameters.model.G_c = G_c
+parameters.model.p_cav = p_cav
+# parameters.model.gamma_p = gamma_p
+parameters.model.e_c = e_c
+parameters.model.p_c = p_c
+parameters.model.tau_c = tau_c
+parameters.model.gamma_k = gamma_k
+parameters.model.gamma_mu = gamma_mu
+# parameters.model.gamma_p = gamma_p
 
 
 model_dimension = args.model_dimension
@@ -196,26 +204,26 @@ degree_q = args.degree_q
 degree_u = args.degree_u
 lc = ell / h_div
 
-parameters["model"]["model_dimension"] = model_dimension
-parameters["model"]["nonlinear_elastic"] = nonlinear_elastic
-parameters["model"]["elastic"] = elastic
-parameters["geometry"]["geometric_dimension"] = gdim
-parameters["geometry"]["L"] = L
-parameters["geometry"]["H"] = H
-parameters["geometry"]["h_div"] = h_div
-parameters["geometry"]["lc"] = h_div
-parameters["fem"]["degree_u"] = degree_u
-parameters["fem"]["degree_q"] = degree_q
+parameters.model.model_dimension = model_dimension
+parameters.model.nonlinear_elastic = nonlinear_elastic
+parameters.model.elastic = elastic
+parameters.geometry.geometric_dimension = gdim
+parameters.geometry.L = L
+parameters.geometry.H = H
+parameters.geometry.h_div = h_div
+parameters.geometry.lc = h_div
+parameters.fem.degree_u = degree_u
+parameters.fem.degree_q = degree_q
 
 # Derived quantities
 lmbda = k - 2 / model_dimension * mu
-parameters["model"]["lambda"] = lmbda
+parameters["model"]["lambda"] = lmbda  # Note: 'lambda' is a Python keyword, must use bracket notation
 nu = (1 - 2 * mu / (model_dimension * k)) / (
     model_dimension - 1 + 2 * mu / (model_dimension * k)
 )
-parameters["model"]["nu"] = nu
+parameters.model.nu = nu
 E = 2 * mu * (1 + nu)
-parameters["model"]["E"] = E
+parameters.model.E = E
 
 # Additional parametres
 output_name = args.output_name
@@ -272,9 +280,12 @@ with XDMFFile(
     file.write_meshtags(cell_tags, mesh.geometry)
     file.write_meshtags(facet_tags, mesh.geometry)
 
+# Save parameters for reproducibility
 if comm.rank == 0:
-    with open(f"{prefix}-parameters.yml", "w") as f:
-        yaml.dump(parameters, f)
+    # Save the complete configuration (includes all command-line overrides)
+    OmegaConf.save(parameters, f"{prefix}-parameters.yml")
+    ColorPrint.print_info(f"Parameters saved to: {prefix}-parameters.yml")
+    ColorPrint.print_info(f"To reproduce this run: python {__file__} --config {prefix}-parameters.yml")
 
 # Define integration measures
 dx_quad = ufl.Measure(
@@ -354,7 +365,7 @@ alpha_ub = dolfinx.fem.Function(V_alpha, name="Upper_bound")
 
 alpha_lb.interpolate(lambda x: np.zeros_like(x[0]))
 alpha_lb.x.scatter_forward()
-if parameters["model"]["elastic"] == 1:
+if parameters.model.elastic == 1:
     alpha_ub.interpolate(lambda x: np.zeros_like(x[0]))
 else:
     alpha_ub.interpolate(lambda x: np.ones_like(x[0]))
@@ -485,7 +496,7 @@ def muf(alpha, k_res=kres_a):
 def eps_nl(eps, alpha):
     criterion = kappa(alpha) * ufl.tr(eps) - p_cav * sigma_p(alpha)
     zero = dolfinx.fem.Constant(mesh, 0.0)
-    if parameters.get("model").get("nonlinear_elastic"):
+    if parameters.model.nonlinear_elastic:
         eps_nl = ufl.conditional(
             ufl.ge(criterion, 0.0), criterion / (kappa(alpha)), zero * criterion
         )
@@ -600,29 +611,29 @@ solver_u = SNESSolver(
     u,
     bcs_u,
     J_form=J_u,
-    petsc_options=parameters["solvers"]["elasticity"]["snes"],
-    prefix=parameters["solvers"]["elasticity"]["prefix"],
+    petsc_options=parameters.solvers.elasticity.snes,
+    prefix=parameters.solvers.elasticity.prefix,
 )
 
 
-if parameters.get("solvers").get("damage").get("type") == "SNES":
+if parameters.solvers.damage.type == "SNES":
     solver_alpha = SNESSolver(
         residual_alpha,
         alpha,
         bcs_alpha,
         bounds=(alpha_lb, alpha_ub),
-        petsc_options=parameters.get("solvers").get("damage").get("snes"),
-        prefix=parameters.get("solvers").get("damage").get("prefix"),
+        petsc_options=parameters.solvers.damage.snes,
+        prefix=parameters.solvers.damage.prefix,
     )
-if parameters.get("solvers").get("damage").get("type") == "TAO":
+if parameters.solvers.damage.type == "TAO":
     solver_alpha = TAOSolver(
         total_energy_,
         alpha,
         bcs_alpha,
         bounds=(alpha_lb, alpha_ub),
         # J_form=J_alpha,
-        petsc_options=parameters.get("solvers").get("damage").get("tao"),
-        prefix=parameters.get("solvers").get("damage").get("prefix"),
+        petsc_options=parameters.solvers.damage.tao,
+        prefix=parameters.solvers.damage.prefix,
     )
 
 # %%
@@ -714,7 +725,7 @@ for i_t, t in enumerate(loads):
 
     alt_min_it = 0
     for iteration in range(
-        parameters.get("solvers").get("damage_elasticity").get("max_it")
+        parameters.solvers.damage_elasticity.max_it
     ):
         alt_min_it += 1
         # solve non-linear elastoplastic problem
@@ -774,26 +785,22 @@ for i_t, t in enumerate(loads):
         )
         
         # Check convergence based on specified criterion
-        solver_params = parameters["solvers"]["damage_elasticity"]
-        criterion = solver_params.get("criterion")
+        solver_params = parameters.solvers.damage_elasticity
+        criterion = solver_params.criterion
         
         converged = False
         if criterion == "residual_u":
-            converged = error_residual_u <= solver_params.get("residual_u_tol")
+            converged = error_residual_u <= solver_params.residual_u_tol
         elif criterion == "alpha_max":
-            converged = error_alpha_max <= solver_params.get("alpha_tol")
+            converged = error_alpha_max <= solver_params.alpha_tol
         elif criterion == "energy":
-            converged = (error_energy_r <= solver_params.get("energy_rtol") or 
-                        error_energy_a <= solver_params.get("energy_atol"))
+            converged = (error_energy_r <= solver_params.energy_rtol or 
+                        error_energy_a <= solver_params.energy_atol)
         
         if converged:
             break
     else:
-        if (
-            not parameters["solvers"]
-            .get("damage_elasticity")
-            .get("error_on_nonconvergence")
-        ):
+        if not parameters.solvers.damage_elasticity.error_on_nonconvergence:
             ColorPrint.print_warn(
                 (
                     f"Could not converge after {iteration:3d} iterations,"
