@@ -1,0 +1,135 @@
+fem:
+  degree_q: 2
+  degree_u: 0
+geometry:
+  H: 0.2
+  L: 1.0
+  geom_type: poker-chip
+  geometric_dimension: 2
+  h_div: 3.0
+  lc: 3.0
+loading:
+  max: 1.0
+  min: 0
+  steps: 100
+model:
+  E: 1.7696519684462053
+  G_c: 0.3141592653589793
+  e_c: 0.2
+  elastic: 1
+  ell: 0.1
+  gamma_k: 735.4208560758401
+  gamma_mu: 2.0
+  k_res: 1.0e-06
+  kappa: 1000.0
+  lambda: 999.6066666666667
+  model_dimension: 3
+  model_type: plane-strain
+  mu: 0.59
+  nonlinear_elastic: 1
+  nu: 0.499705058005259
+  p_c: 1.649100133406095
+  p_cav: 1.475
+  tau_c: 0.7681145747868608
+  w_1: 1.0
+solvers:
+  damage:
+    prefix: damage_
+    snes:
+      ksp_type: cg
+      pc_type: lu
+      snes_atol: 1.0e-08
+      snes_linesearch_damping: 0.0
+      snes_linesearch_type: cp
+      snes_max_it: 150
+      snes_monitor: ''
+      snes_rtol: 1.0e-08
+      snes_stol: 1.0e-08
+      snes_type: vinewtonssls
+    tao:
+      ksp_rtol: 1e-8
+      tao_catol: 0.0
+      tao_crtol: 0.0
+      tao_gatol: 1.0e-06
+      tao_grtol: 1.0e-06
+      tao_gttol: 1.0e-06
+      tao_ls_ftol: 1e-8
+      tao_ls_gtol: 1e-8
+      tao_ls_rtol: 1e-8
+      tao_ls_stepmax: 1e6
+      tao_ls_stepmin: 0e-8
+      tao_max_it: 500
+      tao_monitor: ''
+      tao_steptol: 1.0e-07
+      tao_type: tron
+    type: TAO
+  damage_elasticity:
+    alpha_tol: 0.0001
+    criterion: residual_u
+    energy_atol: 0.001
+    energy_rtol: 0.001
+    error_on_nonconvergence: false
+    max_it: 200
+    residual_u_tol: 0.0001
+  elasticity:
+    prefix: elasticity_
+    snes:
+      ksp_atol: 1e-8
+      ksp_rtol: 1e-8
+      ksp_type: cg
+      pc_type: sor
+      snes_atol: 1e-8
+      snes_converged_reason: ''
+      snes_linesearch_damping: 0.5
+      snes_linesearch_minlambda: 0.5
+      snes_linesearch_order: 3
+      snes_linesearch_type: cp
+      snes_ls_atol: 1.0e-08
+      snes_ls_rtol: 1.0e-08
+      snes_ls_stol: 0.0
+      snes_max_it: 500
+      snes_monitor: ''
+      snes_rtol: 1e-8
+      snes_stol: 0
+      snes_type: vinewtonrsls
+    tao:
+      ksp_rtol: 1e-6
+      pc_type: lu
+      snes_linesearch_minlambda: 5e-1
+      snes_linesearch_order: 3
+      tao_catol: 0.0
+      tao_crtol: 0.0
+      tao_fatol: 0.0
+      tao_frtol: 0.0
+      tao_gatol: 1.0e-08
+      tao_gpcg_maxpgits: 50
+      tao_grtol: 1.0e-08
+      tao_gttol: 1.0e-08
+      tao_linesearch_type: nleqerr
+      tao_ls_ftol: 1e-8
+      tao_ls_gtol: 1e-8
+      tao_ls_rtol: 1e-8
+      tao_ls_stepmax: 0.001
+      tao_ls_stepmin: 1.0e-08
+      tao_max_it: 100
+      tao_monitor: ''
+      tao_steptol: 1.0e-07
+      tao_type: bqnls
+    type: SNES
+stability:
+  checkstability: 'True'
+  cont_rtol: 1.0e-10
+  continuation: 'False'
+  eigen:
+    eig_rtol: 1.0e-07
+    eps_max_it: 500
+    eps_target: 0
+    eps_tol: 1.0e-07
+    eps_type: krylovschur
+    spectral_shift: 1.0
+    spectral_transform: shift-and-invert
+  inactiveset_gatol: 1.0e-08
+  inactiveset_pwtol: 1.0e-08
+  is_elastic_tol: 1.0e-07
+  maxmodes: 3
+  order: 3

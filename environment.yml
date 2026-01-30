@@ -1,0 +1,37 @@
+name: poker-chip
+channels:
+  - conda-forge
+dependencies:
+  # Python
+  - python=3.11
+  
+  # Core scientific computing
+  - numpy>=1.19.0
+  - scipy>=1.5.0
+  
+  # FEniCS and related
+  - fenics-dolfinx>=0.10
+  - petsc
+  - petsc4py
+  - mpi4py>=3.0
+  - python-gmsh
+  - scifem
+
+  
+  # Configuration and visualization
+  - pyyaml>=5.3
+  - matplotlib>=3.3.0
+  
+  # Additional tools
+  - scienceplots>=2.0.0
+  - pip
+  
+  # Optional: development tools
+  - jupyter
+  - ipython
+  - pytest
+  - black
+  
+  
+pip:
+  - scienceplots>=2.0.0
