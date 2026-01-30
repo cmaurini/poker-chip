@@ -6,6 +6,19 @@ __pycache__/
 # C extensions
 *.so
 
+# Output directories from simulations
+2d-*/
+3d-*/
+output*/
+*output*/
+
+# Output files
+*.xdmf
+*.h5
+*.json
+*.pdf
+*.png
+
 # Distribution / packaging
 .Python
 build/
