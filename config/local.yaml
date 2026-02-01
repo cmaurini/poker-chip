@@ -1,0 +1,8 @@
+defaults:
+  - config
+  - override hydra/launcher: joblib
+
+hydra:
+  launcher:
+    n_jobs: 4  # Number of parallel jobs to run locally
+    # pre_dispatch: 2*n_jobs

@@ -5,7 +5,9 @@ from pathlib import Path
 
 # Read long description from README
 readme_file = Path(__file__).parent / "README.md"
-long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
+long_description = (
+    readme_file.read_text(encoding="utf-8") if readme_file.exists() else ""
+)
 
 setup(
     name="poker_chip",
@@ -26,6 +28,9 @@ setup(
         "matplotlib>=3.5",
         "scienceplots>=2.0",
         "scifem>=0.16.1",
+        "hydra-core>=1.3",
+        "hydra-joblib-launcher>=1.2",
+        "hydra-submitit-launcher>=1.2",
         # Note: dolfinx, petsc4py, mpi4py should be installed via conda
         # conda install -c conda-forge fenics-dolfinx mpich
     ],

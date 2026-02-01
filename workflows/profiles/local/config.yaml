@@ -1,5 +1,0 @@
-cores: 4
-jobs: 4
-resources:
-  mem_mb: 4000
-  time_min: 120

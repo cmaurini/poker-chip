@@ -21,10 +21,10 @@ def mesh_bar(L, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD):
         model.add("Rectangle")
         model.setCurrent("Rectangle")
 
-        p0 = model.geo.addPoint(-L / 2, 0.0, 0, lc, tag=0)
-        p1 = model.geo.addPoint(L / 2, 0.0, 0, lc, tag=1)
-        p2 = model.geo.addPoint(L / 2, H, 0.0, lc, tag=2)
-        p3 = model.geo.addPoint(-L / 2, H, 0, lc, tag=3)
+        p0 = model.geo.addPoint(-L / 2, -H / 2, 0, lc, tag=0)
+        p1 = model.geo.addPoint(L / 2, -H / 2, 0, lc, tag=1)
+        p2 = model.geo.addPoint(L / 2, H / 2, 0.0, lc, tag=2)
+        p3 = model.geo.addPoint(-L / 2, H / 2, 0, lc, tag=3)
 
         bottom = model.geo.addLine(p0, p1, tag=12)
         right = model.geo.addLine(p1, p2, tag=13)

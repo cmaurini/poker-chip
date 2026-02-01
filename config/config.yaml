@@ -1,0 +1,24 @@
+defaults:
+  - _self_
+  - parameters
+
+hydra:
+  run:
+    # Output directory for single runs
+    # Structure: results/<output_name>/<slug>/<date>/<time>
+    dir: results/${output_name}/${get_run_slug:${model},${geometry}}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    # Output directory for sweeps (multirun)
+    # Structure: results/<output_name>/multirun/<date>/<time>
+    dir: results/${output_name}/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    # Subdirectory for each job in the sweep, named after the changing parameters
+    subdir: ${get_run_slug:${model},${geometry}}/${hydra.job.override_dirname}_job${hydra.job.num}
+  job:
+    chdir: true
+    config:
+      override_dirname:
+        kv_sep: '='
+        item_sep: ','
+        exclude_keys:
+          - output_name
+          - outdir

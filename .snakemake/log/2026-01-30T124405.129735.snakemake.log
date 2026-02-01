@@ -1,7 +1,0 @@
-Config file config.yml is extended by additional config specified via the command line.
-FileNotFoundError in file "/Users/maurini/Documents/codes/poker_chip/workflows/Snakefile", line 35:
-[Errno 2] No such file or directory: '/Users/maurini/Documents/codes/poker_chip/sweeps/default.yml'
-  File "/Users/maurini/Documents/codes/poker_chip/workflows/Snakefile", line 87, in <module>
-  File "/Users/maurini/Documents/codes/poker_chip/workflows/Snakefile", line 69, in load_params_lazy
-  File "/Users/maurini/Documents/codes/poker_chip/workflows/Snakefile", line 35, in load_sweep_config
-  File "/Users/maurini/miniconda3/envs/poker-chip/lib/python3.11/site-packages/omegaconf/omegaconf.py", line 189, in load

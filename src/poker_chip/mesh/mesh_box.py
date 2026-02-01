@@ -3,9 +3,7 @@ from mpi4py import MPI
 import gmsh
 
 
-def box_mesh(
-    Lx, Ly, Lz, lc, tdim=3, order=1, msh_file=None, comm=MPI.COMM_WORLD
-):
+def box_mesh(Lx, Ly, Lz, lc, tdim=3, order=1, msh_file=None, comm=MPI.COMM_WORLD):
     """Create a box mesh using GMSH with specified dimensions and mesh parameters.
     This function creates a rectangular box mesh centered at the origin using GMSH. The mesh includes
     tagged boundaries for each face of the box and allows specification of mesh characteristics.
@@ -75,7 +73,7 @@ def box_mesh(
         model.setCurrent("box")
         # add a box mesh os size .1, .2, .3 with gmsh model
 
-        box = model.occ.addBox(-Lx / 2.0, 0, -Lz / 2.0, Lx, Ly, Lz, tag=100)
+        box = model.occ.addBox(-Lx / 2.0, -Ly / 2.0, -Lz / 2.0, Lx, Ly, Lz, tag=100)
         model.occ.synchronize()
 
         # Add physical groups
@@ -134,7 +132,11 @@ if __name__ == "__main__":
         gdim=tdim,
         partitioner=partitioner,
     )
-    mesh, cell_tags, facet_tags = mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags
+    mesh, cell_tags, facet_tags = (
+        mesh_data.mesh,
+        mesh_data.cell_tags,
+        mesh_data.facet_tags,
+    )
     interfaces_keys = tag_names["facets"]
     with XDMFFile(
         mesh_comm,

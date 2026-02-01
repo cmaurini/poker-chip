@@ -1,0 +1,62 @@
+model:
+  mu: 0.59
+  kappa: 500.0
+  ell: 0.01
+  e_c: 0.2
+  p_cav: 1.475
+  w_1: 1.0
+  gamma_mu: 2.0
+  nonlinear_elastic: 1
+  elastic: 1
+
+geometry:
+  geometric_dimension: 2
+  L: 1.0
+  H: 0.095
+  h_div: 3.0
+
+fem:
+  degree_q: 2
+  degree_u: 0
+
+output_name: "poker"
+load_max: 1.0
+n_steps: 100
+unload: 0
+sliding: 0
+full_output: 0
+outdir: null
+
+solvers:
+  elasticity:
+    type: SNES
+    prefix: elast_
+    snes:
+      snes_type: newtonls
+      snes_linesearch_type: basic
+      snes_atol: 1e-8
+      snes_rtol: 1e-6
+      snes_max_it: 50
+      ksp_type: preonly
+      pc_type: lu
+      pc_factor_mat_solver_type: mumps
+  damage:
+    type: SNES
+    prefix: damage_
+    snes:
+      snes_type: vinewtonrsls
+      snes_linesearch_type: basic
+      snes_atol: 1e-8
+      snes_rtol: 1e-6
+      snes_max_it: 50
+      ksp_type: preonly
+      pc_type: lu
+      pc_factor_mat_solver_type: mumps
+  damage_elasticity:
+    max_it: 300
+    criterion: residual_u
+    residual_u_tol: 1e-6
+    alpha_tol: 1e-6
+    energy_rtol: 1e-6
+    energy_atol: 1e-8
+    error_on_nonconvergence: false

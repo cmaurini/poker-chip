@@ -20,11 +20,12 @@ def mesh_chip(R, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD):
         model.add("Circle")
         model.setCurrent("Circle")
 
-        p0 = model.geo.addPoint(0.0, 0.0, 0, lc, tag=0)
-        p1 = model.geo.addPoint(R, 0.0, 0, lc, tag=1)
-        p2 = model.geo.addPoint(0, 0, R, lc, tag=2)
-        p3 = model.geo.addPoint(-R, 0, 0, lc, tag=3)
-        p4 = model.geo.addPoint(0, 0, -R, lc, tag=4)
+        y0 = -H / 2
+        p0 = model.geo.addPoint(0.0, y0, 0, lc, tag=0)
+        p1 = model.geo.addPoint(R, y0, 0, lc, tag=1)
+        p2 = model.geo.addPoint(0, y0, R, lc, tag=2)
+        p3 = model.geo.addPoint(-R, y0, 0, lc, tag=3)
+        p4 = model.geo.addPoint(0, y0, -R, lc, tag=4)
 
         bottom_right_up = model.geo.addCircleArc(p1, p0, p2)
         bottom_left_up = model.geo.addCircleArc(p2, p0, p3)
@@ -46,6 +47,7 @@ def mesh_chip(R, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD):
         model.addPhysicalGroup(tdim - 1, [5], 16)
         model.setPhysicalName(tdim - 1, 16, "bottom")
 
+        # Extrude by H in positive y-direction from y=-H/2 to y=H/2
         v1 = gmsh.model.geo.extrude([(tdim - 1, s1)], 0.0, H, 0.0)
         model.geo.synchronize()
         model.addPhysicalGroup(tdim - 1, [v1[0][1]], 17)
@@ -82,9 +84,7 @@ def mesh_chip(R, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD):
     return model_out, tdim, tag_names
 
 
-def mesh_chip_eight(
-    R, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD
-):
+def mesh_chip_eight(R, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD):
     facet_tag_names = {
         "top": 17,
         "bottom": 16,
@@ -108,9 +108,10 @@ def mesh_chip_eight(
         model.add("SectorCylinder")
         model.setCurrent("SectorCylinder")
 
-        p0 = model.geo.addPoint(0.0, 0.0, 0, lc, tag=0)
-        p1 = model.geo.addPoint(R, 0.0, 0, lc, tag=1)
-        p2 = model.geo.addPoint(0, 0, R, lc, tag=2)
+        y0 = -H / 2
+        p0 = model.geo.addPoint(0.0, y0, 0, lc, tag=0)
+        p1 = model.geo.addPoint(R, y0, 0, lc, tag=1)
+        p2 = model.geo.addPoint(0, y0, R, lc, tag=2)
 
         bottom_right = model.geo.addLine(p0, p1)
         bottom_left = model.geo.addLine(p2, p0)
@@ -122,6 +123,7 @@ def mesh_chip_eight(
         model.addPhysicalGroup(tdim - 1, [5], 16)
         model.setPhysicalName(tdim - 1, 16, "bottom")
 
+        # Extrude by H in positive y-direction from y=-H/2 to y=H/2
         v1 = gmsh.model.geo.extrude([(tdim - 1, s1)], 0.0, H, 0.0)
         model.geo.synchronize()
         model.addPhysicalGroup(tdim - 1, [v1[0][1]], 17)
@@ -168,9 +170,7 @@ def test_mesh_chip():
     comm = MPI.COMM_WORLD
     model_rank = 0
 
-    gmsh_model, tdim, tag_names = mesh_chip(
-        R, H, lc, tdim, order, msh_file, comm
-    )
+    gmsh_model, tdim, tag_names = mesh_chip(R, H, lc, tdim, order, msh_file, comm)
 
     partitioner = dolfinx.mesh.create_cell_partitioner(
         dolfinx.mesh.GhostMode.shared_facet
@@ -182,7 +182,11 @@ def test_mesh_chip():
         gdim=tdim,
         partitioner=partitioner,
     )
-    mesh, cell_tags, facet_tags = mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags
+    mesh, cell_tags, facet_tags = (
+        mesh_data.mesh,
+        mesh_data.cell_tags,
+        mesh_data.facet_tags,
+    )
     interfaces_keys = tag_names["facets"]
     with XDMFFile(
         comm,
@@ -217,9 +221,7 @@ def test_mesh_chip_eight():
     comm = MPI.COMM_WORLD
     model_rank = 0
 
-    gmsh_model, tdim, tag_names = mesh_chip_eight(
-        R, H, lc, tdim, order, msh_file, comm
-    )
+    gmsh_model, tdim, tag_names = mesh_chip_eight(R, H, lc, tdim, order, msh_file, comm)
 
     partitioner = dolfinx.mesh.create_cell_partitioner(
         dolfinx.mesh.GhostMode.shared_facet
@@ -231,7 +233,11 @@ def test_mesh_chip_eight():
         gdim=tdim,
         partitioner=partitioner,
     )
-    mesh, cell_tags, facet_tags = mesh_data.mesh, mesh_data.cell_tags, mesh_data.facet_tags
+    mesh, cell_tags, facet_tags = (
+        mesh_data.mesh,
+        mesh_data.cell_tags,
+        mesh_data.facet_tags,
+    )
     interfaces_keys = tag_names["facets"]
     with XDMFFile(
         comm,
@@ -249,9 +255,7 @@ def test_mesh_chip_eight():
         print(f"Mesh has {mesh.topology.index_map(tdim).size_local} cells.")
         print("\nFacet tags:")
         for name, tag in interfaces_keys.items():
-            print(
-                f"  {name}: {tag}, number of facets {len(facet_tags.find(tag))}"
-            )
+            print(f"  {name}: {tag}, number of facets {len(facet_tags.find(tag))}")
 
 
 if __name__ == "__main__":
