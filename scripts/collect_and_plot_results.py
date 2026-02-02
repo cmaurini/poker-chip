@@ -204,16 +204,16 @@ def create_enhanced_equivalent_modulus_plot(
 
         # Gent-Lindley paper analytical formula
 
-        Eeq_2d_ratio_comp_gent_paper_an = 4 / 3 + (4 / 3) * (aspect_ratios_theory**2)
+        Eeq_2d_ratio_comp_gent_paper_an = (1 + (aspect_ratios_theory**2)) * 4 / 3
         Einf = E_uniaxial_strain
         Eeq_2d_ratio_comp_gent_paper_an_comp = (
             Eeq_2d_ratio_comp_gent_paper_an
-            * Einf
-            / (Einf + Eeq_2d_ratio_comp_gent_paper_an)
+            * (Einf / E_uniaxial_stress)
+            / (Einf / E_uniaxial_stress + Eeq_2d_ratio_comp_gent_paper_an)
         )
         plt.loglog(
             aspect_ratios_theory,
-            Eeq_2d_ratio_comp_gent_paper_an_comp / E_uniaxial_stress,
+            Eeq_2d_ratio_comp_gent_paper_an_comp,
             color=colors[i],
             linewidth=2.5,
             linestyle=":",

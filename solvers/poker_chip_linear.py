@@ -556,7 +556,12 @@ def main(cfg: DictConfig):
                 mu0=mu, H=H_theory, R=R_theory, geometry="2d", compressible=False
             ),
             "2D_comp": formulas_paper.equivalent_modulus(
-                mu0=mu, kappa0=kappa, H=H_theory, R=R_theory, geometry="2d", compressible=True
+                mu0=mu,
+                kappa0=kappa,
+                H=H_theory,
+                R=R_theory,
+                geometry="2d",
+                compressible=True,
             ),
             "3D_inc": formulas_paper.equivalent_modulus(
                 mu0=mu, H=H_theory, R=R_theory, geometry="3d", compressible=False
@@ -565,7 +570,12 @@ def main(cfg: DictConfig):
                 mu0=mu, H=H_theory, R=R_theory, geometry="3d", compressible=False
             ),  # Note: same as 3D_inc for now
             "3D_comp": formulas_paper.equivalent_modulus(
-                mu0=mu, kappa0=kappa, H=H_theory, R=R_theory, geometry="3d", compressible=True
+                mu0=mu,
+                kappa0=kappa,
+                H=H_theory,
+                R=R_theory,
+                geometry="3d",
+                compressible=True,
             ),
             "2D_GL_analytic": (1 + (L / H) ** 2) * 4.0 / 3.0,
         }
