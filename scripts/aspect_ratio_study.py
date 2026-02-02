@@ -17,12 +17,11 @@ import yaml
 
 # Import poker_chip package
 _script_dir = Path(__file__).parent.parent  # Go up to project root
-sys.path.insert(0, str(_script_dir / "src"))
-sys.path.insert(0, str(_script_dir / "src" / "poker_chip" / "models"))
+sys.path.insert(0, str(_script_dir))
 
-# Import Gent and Lindley formulas
-import formulas_paper
-import gent_lindley_data as gl_data
+# Import Gent and Lindley formulas from reference directory
+from reference import formulas_paper
+from reference import gent_lindley_data as gl_data
 
 # Extract the functions we need
 Eeq_2d = formulas_paper.Eeq_2d
@@ -143,7 +142,7 @@ def run_single_simulation(aspect_ratio, h_div=8):
             yaml.dump(config, f)
 
         # Run simulation using hydra override
-        script_path = Path(__file__).parent / "poker_chip_linear.py"
+        script_path = Path(__file__).parent.parent / "solvers" / "poker_chip_linear.py"
 
         # Build hydra overrides
         overrides = [
@@ -313,7 +312,6 @@ def main():
         plt.savefig(
             output_dir / "equivalent_modulus_all_theories.pdf", bbox_inches="tight"
         )
-        plt.show()
 
         # Create error analysis plot for all theories
         plt.figure(figsize=(14, 8))
@@ -346,7 +344,6 @@ def main():
             dpi=300,
             bbox_inches="tight",
         )
-        plt.show()
 
         # Additional plot: Energy components
         plt.figure(figsize=(12, 4))
@@ -377,7 +374,6 @@ def main():
 
         plt.tight_layout()
         plt.savefig(output_dir / "energy_and_force_vs_aspect_ratio.png", dpi=300)
-        plt.show()
 
         print(f"\nResults saved to {output_dir}")
         print(f"Total successful simulations: {len(results)}")

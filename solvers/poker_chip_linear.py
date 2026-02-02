@@ -22,6 +22,12 @@ from dolfinx.io import XDMFFile
 from dolfinx.io.gmsh import model_to_mesh
 
 # Import local modules
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from solvers import (
     SNESSolver,
     ColorPrint,
@@ -240,7 +246,11 @@ def box_mesh_refined(Lx, Ly, Lz, lc_center, lc_edge, edge_width, tdim=3, order=1
     return model_out, tdim, tag_names
 
 
-@hydra.main(version_base=None, config_path="./config", config_name="config_linear")
+# Determine config path relative to script location
+config_path = str(Path(__file__).parent.parent / "config")
+
+
+@hydra.main(version_base=None, config_path=config_path, config_name="config_linear")
 def main(cfg: DictConfig):
     parameters = cfg
 

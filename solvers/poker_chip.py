@@ -46,6 +46,12 @@ from dolfinx.io import XDMFFile
 from dolfinx.io.gmsh import model_to_mesh
 
 # Import local modules
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from solvers import (
     AltMinFractureSolver as FractureSolver,
     SNESSolver,
@@ -67,7 +73,11 @@ plt.rcParams.update({"text.usetex": True})
 comm = MPI.COMM_WORLD
 
 
-@hydra.main(version_base=None, config_path="./config", config_name="config")
+# Determine config path relative to script location
+config_path = str(Path(__file__).parent.parent / "config")
+
+
+@hydra.main(version_base=None, config_path=config_path, config_name="config")
 def main(cfg: DictConfig):
     parameters = cfg
 
@@ -765,6 +775,8 @@ def main(cfg: DictConfig):
             a_file = open(f"{prefix}_data.json", "w")
             json.dump(history_data, a_file)
             a_file.close()
+
+            ColorPrint.print_info(f"Results saved to {prefix}_data.json")
         if comm.rank == 0:
             # plot energies
             plt.figure(0)

@@ -11,7 +11,7 @@ import scipy.special
 import numpy as np
 import scienceplots
 import matplotlib.pyplot as plt
-import gent_lindley_data as gl_data
+from . import gent_lindley_data as gl_data
 
 plt.style.use("science")
 # =========================
