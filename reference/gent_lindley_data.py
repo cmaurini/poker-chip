@@ -191,6 +191,7 @@ if __name__ == "__main__":
     import numpy as np
     from matplotlib import pyplot as plt
     import os
+    from formulas_paper import Eeq_3d
 
     # plot original and corrected data
 
@@ -204,7 +205,6 @@ if __name__ == "__main__":
     #    color="gray",
     # )
     # add analytical estimate for comparison of the curve with Eeq_3d
-    from poker_chip.models.formulas_paper import Eeq_3d
 
     eta_vals = np.linspace(0.01, 1.0, 100)
     # Eeq_3d_vals = Eeq_3d(mu0=mu_GL / 2, kappa0=kappa_GL, #H=H_GL, R=R_GL) * eta_vals
@@ -215,7 +215,7 @@ if __name__ == "__main__":
     #    label="Eeq_3d analytical",
     # )
     # add incompressible estimate
-    from poker_chip.models.formulas_paper import (
+    from formulas_paper import (
         Eeq_3d_inc,
         Eeq_3d_inc_exam,
         p_max_3d_inc,
@@ -254,7 +254,7 @@ if __name__ == "__main__":
     plt.vlines(x=0.1, ymin=0, ymax=5, color="gray", linestyle="--")
     plt.legend()
     plt.xlabel("Extension (%)")
-    plt.ylabel("Tensile Stress (MPa) / $\mu$")
+    plt.ylabel(r"Tensile Stress (MPa) / $\mu$")
     plt.title("Gent and Lindley (1959)")
     plt.ylim(0, 5)
     plt.legend()

@@ -266,6 +266,10 @@ def main(cfg: DictConfig):
             dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),
         ]
 
+    k_ = dolfinx.fem.Constant(mesh, float(k))
+    mu_ = dolfinx.fem.Constant(mesh, float(mu))
+    lmbda_ = dolfinx.fem.Constant(mesh, lmbda)
+
     # Define strain and stress for linear elasticity
     def eps(u):
         return ufl.sym(ufl.grad(u))
@@ -280,11 +284,11 @@ def main(cfg: DictConfig):
 
     def sigma_vol(u):
         """Volumetric stress tensor."""
-        return k * eps_vol(u) * ufl.Identity(gdim)
+        return k_ * eps_vol(u) * ufl.Identity(gdim)
 
     def sigma_dev(u):
         """Deviatoric stress tensor."""
-        return 2 * mu * eps_dev(u)
+        return 2 * mu_ * eps_dev(u)
 
     def sigma(u):
         """Total linear elastic stress tensor."""
@@ -307,10 +311,10 @@ def main(cfg: DictConfig):
     dx = ufl.Measure("dx", domain=mesh, metadata={"quadrature_degree": 2 * degree_u})
 
     # Volumetric energy: (1/2) * K * (tr(ε))^2
-    elastic_energy_vol = 0.5 * k * eps_vol(u) ** 2 * dx
+    elastic_energy_vol = 0.5 * k_ * eps_vol(u) ** 2 * dx
 
     # Deviatoric energy: μ * dev(ε) : dev(ε)
-    elastic_energy_dev = mu * ufl.inner(eps_dev(u), eps_dev(u)) * dx
+    elastic_energy_dev = mu_ * ufl.inner(eps_dev(u), eps_dev(u)) * dx
 
     # Total elastic energy
     elastic_energy = elastic_energy_vol + elastic_energy_dev
@@ -441,18 +445,23 @@ def main(cfg: DictConfig):
             * ds(interfaces_keys["top"])
         )
     imposed_strain = Delta / H
+
     average_stress = force / top_surface
     equivalent_modulus = average_stress / imposed_strain
 
     # lines for saving fields
     tol = 0.0001  # Avoid hitting the outside of the domain
     npoints = 100
-    x_points = np.linspace(-L + tol, L - tol, npoints)
+    x_points = np.linspace(
+        -L + tol, L - tol, npoints
+    )  # Mesh is 2L wide, so from -L to +L
     radial_line = np.zeros((3, npoints))
     radial_line[0] = x_points
     radial_line[1] = 0.0
     thickness_line = np.zeros((3, npoints))
-    y_points = np.linspace(-H + tol, H - tol, npoints)
+    y_points = np.linspace(
+        -H + tol, H - tol, npoints
+    )  # Mesh is 2H tall, so from -H to +H
     thickness_line[1] = y_points
     radial_pts = np.ascontiguousarray(
         radial_line[: mesh.geometry.dim].T, dtype=np.float64
@@ -534,34 +543,42 @@ def main(cfg: DictConfig):
     }
     # Print equivalent modulus and theoretical comparisons
     if comm.rank == 0:
-        aspect_ratio = L / H
+        aspect_ratio = L / H  # This is the aspect ratio of the half-geometry
         # Convert mu, nu to kappa for compressible models
         kappa = k  # Use the kappa from the FEM calculation
-        R = L  # Half-width for theoretical formulas
-        Delta = 1.0  # Unit displacement for pressure calculations
-
+        R_theory = L  # Radius/half-width for theoretical formulas
+        H_theory = H  # Half-height for theoretical formulas
+        Delta_theory = Delta  # Applied displacement
         # Calculate theoretical values using original functions with keyword arguments
         theories = {
             "FEM": equivalent_modulus,
-            "2D_inc": Eeq_2d_inc(mu0=mu, H=H, R=R),
-            "2D_comp": Eeq_2d(mu0=mu, kappa0=kappa, H=H, R=R),
-            "3D_inc": Eeq_3d_inc(mu0=mu, H=H, R=R),
-            "3D_inc_exam": Eeq_3d_inc_exam(mu0=mu, H=H, R=R),
-            "3D_comp": Eeq_3d(mu0=mu, kappa0=kappa, H=H, R=R),
+            "2D_inc": Eeq_2d_inc(mu0=mu, H=H_theory, R=R_theory),
+            "2D_comp": Eeq_2d(mu0=mu, kappa0=kappa, H=H_theory, R=R_theory),
+            "3D_inc": Eeq_3d_inc(mu0=mu, H=H_theory, R=R_theory),
+            "3D_inc_exam": Eeq_3d_inc_exam(mu0=mu, H=H_theory, R=R_theory),
+            "3D_comp": Eeq_3d(mu0=mu, kappa0=kappa, H=H_theory, R=R_theory),
         }
 
         # Calculate theoretical pressure maxima using original functions
         p_theories = {
             "FEM": pressure_max,
-            "2D_inc": p_max_2d_inc(mu0=mu, Delta=Delta, H=H, R=R),
-            "2D_comp": p_max_2d(mu0=mu, kappa0=kappa, Delta=Delta, H=H, R=R),
-            "3D_inc": p_max_3d_inc(mu0=mu, Delta=Delta, H=H, R=R),
-            "3D_inc_exam": p_max_3d_inc(mu0=mu, Delta=Delta, H=H, R=R),
-            "3D_comp": p_max_3d(mu0=mu, kappa0=kappa, Delta=Delta, H=H, R=R),
+            "2D_inc": p_max_2d_inc(mu0=mu, Delta=Delta_theory, H=H_theory, R=R_theory),
+            "2D_comp": p_max_2d(
+                mu0=mu, kappa0=kappa, Delta=Delta_theory, H=H_theory, R=R_theory
+            ),
+            "3D_inc": p_max_3d_inc(mu0=mu, Delta=Delta_theory, H=H_theory, R=R_theory),
+            "3D_inc_exam": p_max_3d_inc(
+                mu0=mu, Delta=Delta_theory, H=H_theory, R=R_theory
+            ),
+            "3D_comp": p_max_3d(
+                mu0=mu, kappa0=kappa, Delta=Delta_theory, H=H_theory, R=R_theory
+            ),
         }
 
         ColorPrint.print_bold("=== Results Summary ===")
-        ColorPrint.print_info(f"L/H = {aspect_ratio:.2f}, μ = {mu:.3f}, κ = {k:.1f}")
+        ColorPrint.print_info(
+            f"L/H = {aspect_ratio:.2f}, μ = {mu:.3f}, κ = {k:.1f}, E = {E:.3f}, ν = {nu:.3f}, E_plane_strain = {E / (1 - nu**2):.3f}"
+        )
 
         ColorPrint.print_info(
             "E_equiv: " + " | ".join([f"{k}: {v:.3f}" for k, v in theories.items()])
@@ -569,7 +586,17 @@ def main(cfg: DictConfig):
         ColorPrint.print_info(
             "p_max:   " + " | ".join([f"{k}: {v:.3f}" for k, v in p_theories.items()])
         )
-
+        # compare computed and expected mesh volume
+        mesh_volume = assemble_scalar_reduce(
+            dolfinx.fem.form(dolfinx.fem.Constant(mesh, 1.0) * dx)
+        )
+        if gdim == 2:
+            expected_volume = 4 * L * H  # Rectangle: (2L) × (2H)
+        else:  # gdim == 3
+            expected_volume = 2 * np.pi * L**2 * H  # Cylinder: π*L²*(2H)
+        ColorPrint.print_info(
+            f"Mesh volume (computed/expected): {mesh_volume:.6e}/{expected_volume:.6e}"
+        )
     return history_data, geometry_data
 
 

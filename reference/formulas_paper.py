@@ -11,7 +11,11 @@ import scipy.special
 import numpy as np
 import scienceplots
 import matplotlib.pyplot as plt
-from . import gent_lindley_data as gl_data
+
+try:
+    from . import gent_lindley_data as gl_data
+except ImportError:
+    import gent_lindley_data as gl_data
 
 plt.style.use("science")
 # =========================
@@ -38,9 +42,11 @@ def tau_2d_inc(x, y, *, mu0, Delta, H):
 
 def Eeq_2d_inc(*, mu0, H, R):
     """
+
     Equivalent modulus (2D incompressible)
     """
-    return mu0 * R**2 / (2 * H**2)
+    R_ = R / H
+    return (mu0 * R_**2) / 2
 
 
 def p_max_2d_inc(*, mu0, Delta, H, R):
@@ -448,6 +454,331 @@ if __name__ == "__main__":
     plt.legend()
     plt.title("3D")
     plt.savefig(f"{output_dir}tau_3d_z_comparison.pdf")
+    plt.close()
+
+    # -------------------------
+    # Equivalent modulus comparison
+    # -------------------------
+    plt.figure()
+    colors = plt.cm.viridis(np.linspace(0.9, 0.2, 4))
+
+    # 2D equivalent modulus
+    Eeq_2d_comp = np.array(
+        [Eeq_2d(mu0=mu0, kappa0=k, H=H, R=R) for k in [0.1, 1, 10, 100]]
+    )
+    Eeq_2d_inc_val = Eeq_2d_inc(mu0=mu0, H=H, R=R)
+
+    # 3D equivalent modulus
+    Eeq_3d_comp = np.array(
+        [Eeq_3d(mu0=mu0, kappa0=k, H=H, R=R) for k in [0.1, 1, 10, 100]]
+    )
+    Eeq_3d_inc_val = Eeq_3d_inc(mu0=mu0, H=H, R=R)
+
+    kappa_vals = [0.1, 1, 10, 100]
+    for i, k in enumerate(kappa_vals):
+        if i == 0:  # Add labels only for the first plot
+            plt.scatter(
+                k,
+                Eeq_2d_comp[i],
+                color="blue",
+                marker="o",
+                s=60,
+                label="2D compressible",
+                alpha=0.8,
+            )
+            plt.scatter(
+                k,
+                Eeq_3d_comp[i],
+                color="red",
+                marker="s",
+                s=60,
+                label="3D compressible",
+                alpha=0.8,
+            )
+        else:
+            plt.scatter(k, Eeq_2d_comp[i], color="blue", marker="o", s=60, alpha=0.8)
+            plt.scatter(k, Eeq_3d_comp[i], color="red", marker="s", s=60, alpha=0.8)
+
+    # Add incompressible limits as horizontal lines
+    plt.axhline(
+        y=Eeq_2d_inc_val,
+        color="blue",
+        linestyle="--",
+        linewidth=2,
+        label="2D incompressible",
+    )
+    plt.axhline(
+        y=Eeq_3d_inc_val,
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label="3D incompressible",
+    )
+
+    plt.xlabel(r"$\kappa_0$")
+    plt.ylabel(r"$E_{eq}$")
+    plt.xscale("log")
+    plt.legend()
+    plt.title("Equivalent Modulus")
+    plt.grid(True, alpha=0.3)
+    plt.savefig(f"{output_dir}Eeq_comparison.pdf")
+    plt.close()
+
+    # -------------------------
+    # Equivalent modulus vs aspect ratio
+    # -------------------------
+    plt.figure()
+    aspect_ratios = np.logspace(-1, np.log10(50), 150)  # R/H from 0.1 to 50
+
+    # Different kappa/mu ratios to explore
+    kappa_mu_ratios = [0.1, 1.0, 10.0, 100.0]
+    colors = plt.cm.viridis(np.linspace(0.9, 0.2, len(kappa_mu_ratios)))
+
+    # Calculate Gent-Lindley experimental data first
+    GL_aspect_ratio = gl_data.R_GL / gl_data.H_GL
+    initial_points = 5
+    GL_Eeq_exp = np.polyfit(
+        gl_data.GL_fig2_x[:initial_points], gl_data.GL_fig2_y_MPa[:initial_points], 1
+    )[0]
+    GL_E_material = 3 * gl_data.mu_GL
+    GL_Eeq_normalized = GL_Eeq_exp / GL_E_material
+
+    # Find kappa value that fits GL point for 2D model
+    from scipy.optimize import minimize_scalar
+
+    def objective_2d(kappa_val):
+        Eeq_model = Eeq_2d(
+            mu0=gl_data.mu_GL, kappa0=kappa_val, H=gl_data.H_GL, R=gl_data.R_GL
+        )
+        E_model = 9 * gl_data.mu_GL * kappa_val / (3 * kappa_val + gl_data.mu_GL)
+        return abs(Eeq_model / E_model - GL_Eeq_normalized)
+
+    result_2d = minimize_scalar(objective_2d, bounds=(0.1, 10000), method="bounded")
+    kappa_GL_fit_2d = result_2d.x
+    kappa_mu_GL_fit_2d = round(kappa_GL_fit_2d / gl_data.mu_GL)  # Round to unit
+
+    # Plot 2D cases
+    for i, kappa_mu_ratio in enumerate(kappa_mu_ratios):
+        kappa_val = kappa_mu_ratio * gl_data.mu_GL
+        Eeq_2d_comp_ar = np.array(
+            [
+                Eeq_2d(
+                    mu0=gl_data.mu_GL,
+                    kappa0=kappa_val,
+                    H=gl_data.H_GL,
+                    R=ar * gl_data.H_GL,
+                )
+                for ar in aspect_ratios
+            ]
+        )
+        # Young's modulus for uniaxial traction: E = 9*mu*kappa/(3*kappa + mu)
+        E_uniaxial = 9 * gl_data.mu_GL * kappa_val / (3 * kappa_val + gl_data.mu_GL)
+        plt.loglog(
+            aspect_ratios,
+            Eeq_2d_comp_ar / E_uniaxial,
+            color=colors[i],
+            linewidth=2.5,
+            label=f"2D, $\\kappa/\\mu=${kappa_mu_ratio:.1f}",
+        )
+
+    # Add curve with fitted kappa value for GL point
+    Eeq_2d_GL_fit = np.array(
+        [
+            Eeq_2d(
+                mu0=gl_data.mu_GL,
+                kappa0=kappa_GL_fit_2d,
+                H=gl_data.H_GL,
+                R=ar * gl_data.H_GL,
+            )
+            for ar in aspect_ratios
+        ]
+    )
+    E_GL_fit = (
+        9 * gl_data.mu_GL * kappa_GL_fit_2d / (3 * kappa_GL_fit_2d + gl_data.mu_GL)
+    )
+    plt.loglog(
+        aspect_ratios,
+        Eeq_2d_GL_fit / E_GL_fit,
+        color="orange",
+        linewidth=3,
+        linestyle="-.",
+        label=f"2D, $\\kappa/\\mu=${kappa_mu_GL_fit_2d:.0f} (GL fit)",
+    )
+
+    # Add incompressible limit for 2D
+    Eeq_2d_inc_ar = np.array(
+        [Eeq_2d_inc(mu0=mu0, H=H, R=ar * H) for ar in aspect_ratios]
+    )
+    E_incompressible = 3 * mu0  # Incompressible case: E = 3*mu
+    plt.loglog(
+        aspect_ratios,
+        Eeq_2d_inc_ar / E_incompressible,
+        color="black",
+        linewidth=2.5,
+        linestyle="--",
+        label="2D incompressible",
+    )
+
+    plt.xlabel(r"$R/H$")
+    plt.ylabel(r"$E_{eq}/E$")
+
+    # Add Gent-Lindley experimental point
+    # Calculate experimental equivalent modulus from their data
+    # Use initial slope from force-displacement curve
+    GL_aspect_ratio = gl_data.R_GL / gl_data.H_GL  # R/H for Gent-Lindley
+    # Take initial slope (first few points) to get equivalent modulus
+    initial_points = 5
+    GL_Eeq_exp = np.polyfit(
+        gl_data.GL_fig2_x[:initial_points], gl_data.GL_fig2_y_MPa[:initial_points], 1
+    )[0]
+    GL_E_material = 3 * gl_data.mu_GL  # Assuming incompressible behavior
+    GL_Eeq_normalized = GL_Eeq_exp / GL_E_material
+    plt.scatter(
+        GL_aspect_ratio,
+        GL_Eeq_normalized,
+        marker="*",
+        s=150,
+        color="red",
+        edgecolor="black",
+        linewidth=1,
+        label="Gent-Lindley exp.",
+        zorder=5,
+    )
+
+    plt.legend()
+    plt.title("2D Equivalent Modulus vs Aspect Ratio (Normalized)")
+    plt.grid(True, alpha=0.3)
+    plt.savefig(f"{output_dir}Eeq_2D_aspect_ratio_normalized.pdf")
+    plt.close()
+
+    # Plot 3D cases
+    plt.figure()
+
+    # Find kappa value that fits GL point for 3D model
+    def objective_3d(kappa_val):
+        Eeq_model = Eeq_3d(
+            mu0=gl_data.mu_GL, kappa0=kappa_val, H=gl_data.H_GL, R=gl_data.R_GL
+        )
+        E_model = 9 * gl_data.mu_GL * kappa_val / (3 * kappa_val + gl_data.mu_GL)
+        return abs(Eeq_model / E_model - GL_Eeq_normalized)
+
+    result_3d = minimize_scalar(objective_3d, bounds=(0.1, 10000), method="bounded")
+    kappa_GL_fit_3d = result_3d.x
+    kappa_mu_GL_fit_3d = round(kappa_GL_fit_3d / gl_data.mu_GL)  # Round to unit
+
+    for i, kappa_mu_ratio in enumerate(kappa_mu_ratios):
+        kappa_val = kappa_mu_ratio * gl_data.mu_GL
+        Eeq_3d_comp_ar = np.array(
+            [
+                Eeq_3d(
+                    mu0=gl_data.mu_GL,
+                    kappa0=kappa_val,
+                    H=gl_data.H_GL,
+                    R=ar * gl_data.H_GL,
+                )
+                for ar in aspect_ratios
+            ]
+        )
+        # Young's modulus for uniaxial traction: E = 9*mu*kappa/(3*kappa + mu)
+        E_uniaxial = 9 * gl_data.mu_GL * kappa_val / (3 * kappa_val + gl_data.mu_GL)
+        plt.loglog(
+            aspect_ratios,
+            Eeq_3d_comp_ar / E_uniaxial,
+            color=colors[i],
+            linewidth=2.5,
+            label=f"3D, $\\kappa/\\mu=${kappa_mu_ratio:.1f}",
+        )
+
+    # Add curve with fitted kappa value for GL point
+    Eeq_3d_GL_fit = np.array(
+        [
+            Eeq_3d(
+                mu0=gl_data.mu_GL,
+                kappa0=kappa_GL_fit_3d,
+                H=gl_data.H_GL,
+                R=ar * gl_data.H_GL,
+            )
+            for ar in aspect_ratios
+        ]
+    )
+    E_GL_fit_3d = (
+        9 * gl_data.mu_GL * kappa_GL_fit_3d / (3 * kappa_GL_fit_3d + gl_data.mu_GL)
+    )
+    plt.loglog(
+        aspect_ratios,
+        Eeq_3d_GL_fit / E_GL_fit_3d,
+        color="orange",
+        linewidth=3,
+        linestyle="-.",
+        label=f"3D, $\\kappa/\\mu=${kappa_mu_GL_fit_3d:.0f} (GL fit)",
+    )
+
+    # Add incompressible limit for 3D
+    Eeq_3d_inc_ar = np.array(
+        [Eeq_3d_inc(mu0=gl_data.mu_GL, H=gl_data.H_GL, R=ar * gl_data.H_GL) for ar in aspect_ratios]
+    )
+    E_incompressible = 3 * gl_data.mu_GL  # Incompressible case: E = 3*mu
+    plt.loglog(
+        aspect_ratios,
+        Eeq_3d_inc_ar / E_incompressible,
+        color="black",
+        linewidth=2.5,
+        linestyle="--",
+        label="3D incompressible",
+    )
+    
+    # Add incompressible exam formula for 3D
+    Eeq_3d_inc_exam_ar = np.array(
+        [Eeq_3d_inc_exam(mu0=gl_data.mu_GL, H=gl_data.H_GL, R=ar * gl_data.H_GL) for ar in aspect_ratios]
+    )
+    plt.loglog(
+        aspect_ratios,
+        Eeq_3d_inc_exam_ar / E_incompressible,
+        color="purple",
+        linewidth=2.5,
+        linestyle=":",
+        label="3D incompressible (exam)",
+    )
+
+    # Add theoretical scaling line for 3D incompressible (normalized)
+    theoretical_3d_inc = (3 / 8) * gl_data.mu_GL * aspect_ratios**2 / E_incompressible
+    plt.loglog(
+        aspect_ratios,
+        theoretical_3d_inc,
+        "k:",
+        alpha=0.7,
+        label=r"$\frac{1}{8}(R/H)^2$",
+    )
+
+    plt.xlabel(r"$R/H$")
+    plt.ylabel(r"$E_{eq}/E$")
+
+    # Add Gent-Lindley experimental point
+    # Calculate experimental equivalent modulus from their data
+    GL_aspect_ratio = gl_data.R_GL / gl_data.H_GL  # R/H for Gent-Lindley
+    # Take initial slope (first few points) to get equivalent modulus
+    initial_points = 5
+    GL_Eeq_exp = np.polyfit(
+        gl_data.GL_fig2_x[:initial_points], gl_data.GL_fig2_y_MPa[:initial_points], 1
+    )[0]
+    GL_E_material = 3 * gl_data.mu_GL  # Assuming incompressible behavior
+    GL_Eeq_normalized = GL_Eeq_exp / GL_E_material
+    plt.scatter(
+        GL_aspect_ratio,
+        GL_Eeq_normalized,
+        marker="*",
+        s=150,
+        color="red",
+        edgecolor="black",
+        linewidth=1,
+        label="Gent-Lindley exp.",
+        zorder=5,
+    )
+
+    plt.legend()
+    plt.title("3D Equivalent Modulus vs Aspect Ratio (Normalized)")
+    plt.grid(True, alpha=0.3)
+    plt.savefig(f"{output_dir}Eeq_3D_aspect_ratio_normalized.pdf")
     plt.close()
 
     # -------------------------
