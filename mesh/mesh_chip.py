@@ -1,7 +1,9 @@
 from mpi4py import MPI
 
 
-def mesh_chip(R, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD):
+def mesh_chip(
+    R, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD, verbose=True
+):
     facet_tag_names = {"top": 17, "bottom": 16}
 
     tag_names = {"facets": facet_tag_names}
@@ -11,6 +13,8 @@ def mesh_chip(R, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD):
 
         # Initialise gmsh and set options
         gmsh.initialize()
+        if not verbose:
+            gmsh.option.setNumber("General.Verbosity", 0)
         gmsh.option.setNumber("General.Terminal", 1)
 
         gmsh.option.setNumber("Mesh.Algorithm", 6)

@@ -35,215 +35,64 @@ from solvers import (
     evaluate_function,
 )
 from mesh import mesh_bar, mesh_chip, box_mesh
+from reference.formulas_paper import *
 
 comm = MPI.COMM_WORLD
 
 
-def mesh_bar_refined(L, H, lc_center, lc_edge, edge_width, tdim, order=1):
-    """Create a refined bar mesh with smaller elements near left/right edges."""
-    from mpi4py import MPI
+def plot_fields_along_lines(
+    x_points, y_points, p_val_x, p_val_y, u_val_x, u_val_y, gdim, prefix
+):
+    """Plot pressure and displacement along x and y lines and save figures."""
+    import matplotlib.pyplot as plt
 
-    facet_tag_names = {"top": 14, "bottom": 12, "left": 15, "right": 13}
-    tag_names = {"facets": facet_tag_names}
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-    if MPI.COMM_WORLD.rank == 0:
-        import gmsh
+    # Pressure along x-line (y=0)
+    axes[0, 0].plot(x_points, p_val_x, "b-", linewidth=2)
+    axes[0, 0].set_xlabel("x position")
+    axes[0, 0].set_ylabel("Pressure")
+    axes[0, 0].set_title("Pressure along x-direction (y=0)")
+    axes[0, 0].grid(True)
 
-        gmsh.initialize()
-        gmsh.option.setNumber("General.Terminal", 1)
-        gmsh.option.setNumber("Mesh.Algorithm", 5)
+    # Pressure along y-line (x=0)
+    axes[0, 1].plot(y_points, p_val_y, "r-", linewidth=2)
+    axes[0, 1].set_xlabel("y position")
+    axes[0, 1].set_ylabel("Pressure")
+    axes[0, 1].set_title("Pressure along y-direction (x=0)")
+    axes[0, 1].grid(True)
 
-        model = gmsh.model()
-        model.add("RefinedRectangle")
-        model.setCurrent("RefinedRectangle")
+    # Displacement along x-line (y=0)
+    if gdim == 2:
+        axes[1, 0].plot(x_points, u_val_x[:, 0], "b-", linewidth=2, label="u_x")
+        axes[1, 0].plot(x_points, u_val_x[:, 1], "g-", linewidth=2, label="u_y")
+    else:  # gdim == 3
+        axes[1, 0].plot(x_points, u_val_x[:, 0], "b-", linewidth=2, label="u_x")
+        axes[1, 0].plot(x_points, u_val_x[:, 1], "g-", linewidth=2, label="u_y")
+        axes[1, 0].plot(x_points, u_val_x[:, 2], "m-", linewidth=2, label="u_z")
+    axes[1, 0].set_xlabel("x position")
+    axes[1, 0].set_ylabel("Displacement")
+    axes[1, 0].set_title("Displacement along x-direction (y=0)")
+    axes[1, 0].legend()
+    axes[1, 0].grid(True)
 
-        # Create points with different mesh sizes
-        # Corners
-        p0 = model.geo.addPoint(-L / 2, -H / 2, 0, lc_edge, tag=0)
-        p1 = model.geo.addPoint(L / 2, -H / 2, 0, lc_edge, tag=1)
-        p2 = model.geo.addPoint(L / 2, H / 2, 0.0, lc_edge, tag=2)
-        p3 = model.geo.addPoint(-L / 2, H / 2, 0, lc_edge, tag=3)
+    # Displacement along y-line (x=0)
+    if gdim == 2:
+        axes[1, 1].plot(y_points, u_val_y[:, 0], "b-", linewidth=2, label="u_x")
+        axes[1, 1].plot(y_points, u_val_y[:, 1], "g-", linewidth=2, label="u_y")
+    else:  # gdim == 3
+        axes[1, 1].plot(y_points, u_val_y[:, 0], "b-", linewidth=2, label="u_x")
+        axes[1, 1].plot(y_points, u_val_y[:, 1], "g-", linewidth=2, label="u_y")
+        axes[1, 1].plot(y_points, u_val_y[:, 2], "m-", linewidth=2, label="u_z")
+    axes[1, 1].set_xlabel("y position")
+    axes[1, 1].set_ylabel("Displacement")
+    axes[1, 1].set_title("Displacement along y-direction (x=0)")
+    axes[1, 1].legend()
+    axes[1, 1].grid(True)
 
-        # Transition points (where refinement transitions to coarser)
-        transition_x = edge_width
-        p4 = model.geo.addPoint(-L / 2 + transition_x, -H / 2, 0, lc_center, tag=4)
-        p5 = model.geo.addPoint(L / 2 - transition_x, -H / 2, 0, lc_center, tag=5)
-        p6 = model.geo.addPoint(L / 2 - transition_x, H / 2, 0, lc_center, tag=6)
-        p7 = model.geo.addPoint(-L / 2 + transition_x, H / 2, 0, lc_center, tag=7)
-
-        # Create lines
-        bottom_left = model.geo.addLine(p0, p4, tag=12)
-        bottom_center = model.geo.addLine(p4, p5, tag=121)
-        bottom_right = model.geo.addLine(p5, p1, tag=122)
-
-        right = model.geo.addLine(p1, p2, tag=13)
-
-        top_right = model.geo.addLine(p2, p6, tag=14)
-        top_center = model.geo.addLine(p6, p7, tag=141)
-        top_left = model.geo.addLine(p7, p3, tag=142)
-
-        left = model.geo.addLine(p3, p0, tag=15)
-
-        # Interior vertical lines
-        left_vertical = model.geo.addLine(p4, p7, tag=16)
-        right_vertical = model.geo.addLine(p5, p6, tag=17)
-
-        # Create curve loops and surfaces
-        # Left refined region
-        cloop_left = model.geo.addCurveLoop(
-            [bottom_left, left_vertical, -top_left, left]
-        )
-        surf_left = model.geo.addPlaneSurface([cloop_left], tag=1)
-
-        # Center region
-        cloop_center = model.geo.addCurveLoop(
-            [bottom_center, right_vertical, -top_center, -left_vertical]
-        )
-        surf_center = model.geo.addPlaneSurface([cloop_center], tag=2)
-
-        # Right refined region
-        cloop_right = model.geo.addCurveLoop(
-            [bottom_right, right, top_right, -right_vertical]
-        )
-        surf_right = model.geo.addPlaneSurface([cloop_right], tag=3)
-
-        model.geo.synchronize()
-
-        # Physical groups
-        surface_entities = [surf_left, surf_center, surf_right]
-        model.addPhysicalGroup(tdim, surface_entities, tag=22)
-        model.setPhysicalName(tdim, 22, "Rectangle surface")
-
-        # Boundary physical groups (combine segments for each boundary)
-        model.addPhysicalGroup(tdim - 1, [12, 121, 122], tag=12)  # bottom
-        model.addPhysicalGroup(tdim - 1, [13], tag=13)  # right
-        model.addPhysicalGroup(tdim - 1, [14, 141, 142], tag=14)  # top
-        model.addPhysicalGroup(tdim - 1, [15], tag=15)  # left
-
-        for k, v in facet_tag_names.items():
-            model.setPhysicalName(tdim - 1, v, k)
-
-        model.mesh.setOrder(order)
-        model.mesh.generate(tdim)
-
-    if MPI.COMM_WORLD.rank == 0:
-        model_out = gmsh.model
-    else:
-        model_out = 0
-
-    return model_out, tdim, tag_names
-
-
-def box_mesh_refined(Lx, Ly, Lz, lc_center, lc_edge, edge_width, tdim=3, order=1):
-    """Create a refined box mesh with smaller elements near left/right edges."""
-    from mpi4py import MPI
-
-    facet_tag_names = {
-        "left": 101,
-        "right": 102,
-        "bottom": 103,
-        "top": 104,
-        "front": 105,
-        "back": 106,
-    }
-    tag_names = {"facets": facet_tag_names}
-
-    if MPI.COMM_WORLD.rank == 0:
-        import gmsh
-
-        gmsh.initialize()
-        gmsh.option.setNumber("General.Terminal", 1)
-
-        model = gmsh.model()
-        model.add("RefinedBox")
-        model.setCurrent("RefinedBox")
-
-        # Transition coordinates
-        x_trans_left = -Lx / 2 + edge_width
-        x_trans_right = Lx / 2 - edge_width
-
-        # Create the refined box with three regions in X direction
-        # Left refined region
-        box_left = model.occ.addBox(
-            -Lx / 2, -Ly / 2, -Lz / 2, edge_width, Ly, Lz, tag=1
-        )
-
-        # Center coarse region
-        box_center = model.occ.addBox(
-            x_trans_left, -Ly / 2, -Lz / 2, x_trans_right - x_trans_left, Ly, Lz, tag=2
-        )
-
-        # Right refined region
-        box_right = model.occ.addBox(
-            x_trans_right, -Ly / 2, -Lz / 2, edge_width, Ly, Lz, tag=3
-        )
-
-        model.occ.synchronize()
-
-        # Set mesh sizes using distance fields
-        # Create distance field from left and right faces
-        dist_field = model.mesh.field.add("Distance")
-        left_faces = []
-        right_faces = []
-
-        # Get all faces and identify left/right ones
-        all_faces = model.getEntities(2)
-        for _, face_id in all_faces:
-            com = model.occ.getCenterOfMass(2, face_id)
-            if abs(com[0] + Lx / 2) < 1e-6:  # Left face
-                left_faces.append(face_id)
-            elif abs(com[0] - Lx / 2) < 1e-6:  # Right face
-                right_faces.append(face_id)
-
-        model.mesh.field.setNumbers(dist_field, "FacesList", left_faces + right_faces)
-
-        # Threshold field for mesh size
-        threshold_field = model.mesh.field.add("Threshold")
-        model.mesh.field.setNumber(threshold_field, "IField", dist_field)
-        model.mesh.field.setNumber(threshold_field, "LcMin", lc_edge)
-        model.mesh.field.setNumber(threshold_field, "LcMax", lc_center)
-        model.mesh.field.setNumber(threshold_field, "DistMin", 0)
-        model.mesh.field.setNumber(threshold_field, "DistMax", edge_width)
-
-        model.mesh.field.setAsBackgroundMesh(threshold_field)
-
-        # Physical groups
-        all_volumes = model.getEntities(3)
-        volume_tags = [v[1] for v in all_volumes]
-        model.addPhysicalGroup(3, volume_tags, tag=1)
-        model.setPhysicalName(3, 1, "Box volume")
-
-        # Physical groups for boundaries
-        for k, v in facet_tag_names.items():
-            faces_for_boundary = []
-            for _, face_id in all_faces:
-                com = model.occ.getCenterOfMass(2, face_id)
-                if k == "left" and abs(com[0] + Lx / 2) < 1e-6:
-                    faces_for_boundary.append(face_id)
-                elif k == "right" and abs(com[0] - Lx / 2) < 1e-6:
-                    faces_for_boundary.append(face_id)
-                elif k == "bottom" and abs(com[1] + Ly / 2) < 1e-6:
-                    faces_for_boundary.append(face_id)
-                elif k == "top" and abs(com[1] - Ly / 2) < 1e-6:
-                    faces_for_boundary.append(face_id)
-                elif k == "back" and abs(com[2] + Lz / 2) < 1e-6:
-                    faces_for_boundary.append(face_id)
-                elif k == "front" and abs(com[2] - Lz / 2) < 1e-6:
-                    faces_for_boundary.append(face_id)
-
-            if faces_for_boundary:
-                model.addPhysicalGroup(2, faces_for_boundary, tag=v)
-                model.setPhysicalName(2, v, k)
-
-        model.mesh.setOrder(order)
-        model.mesh.generate(tdim)
-
-    if MPI.COMM_WORLD.rank == 0:
-        model_out = gmsh.model
-    else:
-        model_out = 0
-
-    return model_out, tdim, tag_names
+    plt.tight_layout()
+    plt.savefig(f"{prefix}_fields.pdf", bbox_inches="tight")
+    plt.close()
 
 
 # Determine config path relative to script location
@@ -292,9 +141,9 @@ def main(cfg: DictConfig):
 
     # Create the mesh
     if gdim == 2:
-        gmsh_model, tdim, tag_names = mesh_bar(L, H, lc, gdim)
+        gmsh_model, tdim, tag_names = mesh_bar(2 * L, 2 * H, lc, gdim, verbose=False)
     elif gdim == 3:
-        gmsh_model, tdim, tag_names = box_mesh(L, H, L, lc, gdim)
+        gmsh_model, tdim, tag_names = box_mesh(2 * L, 2 * H, 2 * L, lc, gdim)
 
     mesh_data = model_to_mesh(
         gmsh_model,
@@ -335,8 +184,7 @@ def main(cfg: DictConfig):
 
     # Define functions
     u = dolfinx.fem.Function(V_u, name="displacement")
-    u_top = dolfinx.fem.Function(V_u, name="boundary_displacement_top")
-    u_bottom = dolfinx.fem.Function(V_u, name="boundary_displacement_bottom")
+    u_bcs = dolfinx.fem.Function(V_u, name="boundary_displacement")
 
     # Function for output visualization
     u_output = dolfinx.fem.Function(V_u_output, name="displacement")
@@ -378,8 +226,8 @@ def main(cfg: DictConfig):
             V_u.sub(0), tdim - 1, np.array(right_facets)
         )
         bcs_u = [
-            dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_top, dofs_u_top),
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_bottom),
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),
             dolfinx.fem.dirichletbc(0.0, dofs_u_left, V_u.sub(0)),
             dolfinx.fem.dirichletbc(0.0, dofs_u_right, V_u.sub(0)),
         ]
@@ -405,8 +253,8 @@ def main(cfg: DictConfig):
             facet_tags.find(tag_names["facets"]["back"]),
         )
         bcs_u = [
-            dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_top, dofs_u_top),
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_bottom),
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),
             dolfinx.fem.dirichletbc(0.0, dof_u_left, V_u.sub(0)),
             dolfinx.fem.dirichletbc(0.0, dof_u_right, V_u.sub(0)),
             dolfinx.fem.dirichletbc(0.0, dof_u_front, V_u.sub(2)),
@@ -414,8 +262,8 @@ def main(cfg: DictConfig):
         ]
     else:
         bcs_u = [
-            dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_top, dofs_u_top),
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_bottom),
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),
         ]
 
     # Define strain and stress for linear elasticity
@@ -508,8 +356,14 @@ def main(cfg: DictConfig):
         "tau_y": [],
         "p_x": [],
         "p_y": [],
+        "u_x": [],
+        "u_y": [],
         "pressure_max": [],
+        "tau_max": [],
         "F": [],
+        "Equivalent_modulus": [],
+        "imposed_strain": [],
+        "average_stress": [],
     }
 
     with XDMFFile(comm, f"{prefix}.xdmf", "w", encoding=XDMFFile.Encoding.HDF5) as file:
@@ -523,28 +377,16 @@ def main(cfg: DictConfig):
     # Update boundary conditions
     Delta = load_max * H
     if gdim == 2:
-        u_top.interpolate(lambda x: (np.zeros_like(x[0]), Delta * np.ones_like(x[1])))
-        u_bottom.interpolate(
-            lambda x: (np.zeros_like(x[0]), -Delta * np.ones_like(x[1]))
-        )
+        u_bcs.interpolate(lambda x: (np.zeros_like(x[0]), Delta * x[1] / H))
     elif gdim == 3:
-        u_top.interpolate(
+        u_bcs.interpolate(
             lambda x: (
                 np.zeros_like(x[0]),
-                Delta * np.ones_like(x[1]),
+                Delta * x[1] / H,
                 np.zeros_like(x[2]),
             )
         )
-        u_bottom.interpolate(
-            lambda x: (
-                np.zeros_like(x[0]),
-                -Delta * np.ones_like(x[1]),
-                np.zeros_like(x[2]),
-            )
-        )
-
-    u_top.x.scatter_forward()
-    u_bottom.x.scatter_forward()
+    u_bcs.x.scatter_forward()
 
     # Solve the linear elastic problem
     solver_u.solve()
@@ -560,36 +402,57 @@ def main(cfg: DictConfig):
     press = pressure(u)
 
     # Project equivalent measures onto scalar function space
-
-    stress_expr = dolfinx.fem.Expression(stress, V_scalar.element.interpolation_points)
-    strain_expr = dolfinx.fem.Expression(strain, V_scalar.element.interpolation_points)
+    V_tensor = dolfinx.fem.functionspace(mesh, ("Lagrange", 1, (gdim, gdim)))
+    V_DG1 = dolfinx.fem.functionspace(mesh, ("DG", 1))  # DG1 space for pressure
+    stress_expr = dolfinx.fem.Expression(stress, V_tensor.element.interpolation_points)
+    strain_expr = dolfinx.fem.Expression(strain, V_tensor.element.interpolation_points)
     pressure_expr = dolfinx.fem.Expression(press, V_scalar.element.interpolation_points)
+    pressure_expr_DG1 = dolfinx.fem.Expression(
+        press, V_DG1.element.interpolation_points
+    )
     tau_expr = dolfinx.fem.Expression(tau(u), V_scalar.element.interpolation_points)
+    sigma_fun = dolfinx.fem.Function(V_tensor, name="stress_tensor")
+    pressure_func_DG1 = dolfinx.fem.Function(V_DG1, name="pressure_DG1")
 
     #    stress_func.interpolate(stress_expr)
     #    strain_func.interpolate(strain_expr)
     pressure_func.interpolate(pressure_expr)
+    pressure_func_DG1.interpolate(pressure_expr_DG1)  # Interpolate pressure on DG1
     tau_func.interpolate(tau_expr)
+    sigma_fun.interpolate(stress_expr)
 
     # Find maximum values over the domain
     pressure_max = comm.allreduce(np.max(np.abs(pressure_func.x.array.real)))
+    tau_max = comm.allreduce(np.max(np.abs(tau_func.x.array.real)))
 
     # Calculate force on top surface
-    sigma_sol = sigma(u)
-    force = assemble_scalar_reduce(
-        ufl.dot(sigma_sol * normal, normal) * ds(interfaces_keys["top"])
+    top_surface = assemble_scalar_reduce(
+        ufl.dot(normal, normal) * ds(interfaces_keys["top"])
     )
-    force /= top_surface
+    # Calculate total force in y-direction on top surface
+    if gdim == 2:
+        force = assemble_scalar_reduce(
+            ufl.dot(ufl.dot(sigma(u), normal), ufl.as_vector([0, 1]))
+            * ds(interfaces_keys["top"])
+        )
+    else:  # gdim == 3
+        force = assemble_scalar_reduce(
+            ufl.dot(ufl.dot(sigma(u), normal), ufl.as_vector([0, 1, 0]))
+            * ds(interfaces_keys["top"])
+        )
+    imposed_strain = Delta / H
+    average_stress = force / top_surface
+    equivalent_modulus = average_stress / imposed_strain
 
     # lines for saving fields
     tol = 0.0001  # Avoid hitting the outside of the domain
     npoints = 100
-    x_points = np.linspace(-L / 2 + tol, L / 2 - tol, npoints)
+    x_points = np.linspace(-L + tol, L - tol, npoints)
     radial_line = np.zeros((3, npoints))
     radial_line[0] = x_points
     radial_line[1] = 0.0
     thickness_line = np.zeros((3, npoints))
-    y_points = np.linspace(-H / 2 + tol, H / 2 - tol, npoints)
+    y_points = np.linspace(-H + tol, H - tol, npoints)
     thickness_line[1] = y_points
     radial_pts = np.ascontiguousarray(
         radial_line[: mesh.geometry.dim].T, dtype=np.float64
@@ -601,8 +464,21 @@ def main(cfg: DictConfig):
     # Evaluate fields along lines
     tau_x = evaluate_function(tau_func, radial_pts)
     tau_y = evaluate_function(tau_func, radial_pts)
-    p_val_x = evaluate_function(pressure_func, radial_pts)
-    p_val_y = evaluate_function(pressure_func, thickness_pts)
+    p_val_x = evaluate_function(pressure_func_DG1, radial_pts)  # Use DG1 pressure
+    p_val_y = evaluate_function(pressure_func_DG1, thickness_pts)  # Use DG1 pressure
+
+    # Evaluate displacement along lines
+    u_val_x = evaluate_function(u, radial_pts)  # displacement along x-line
+    u_val_y = evaluate_function(u, thickness_pts)  # displacement along y-line
+
+    # Create and save plots
+    if comm.rank == 0:
+        plot_fields_along_lines(
+            x_points, y_points, p_val_x, p_val_y, u_val_x, u_val_y, gdim, prefix
+        )
+        ColorPrint.print_info(
+            f"Field plots saved to {os.path.abspath(prefix)}_fields.pdf"
+        )
 
     # Store results
     history_data["load"].append(load_max)
@@ -610,12 +486,17 @@ def main(cfg: DictConfig):
     history_data["elastic_energy_vol"].append(elastic_energy_vol_int)
     history_data["elastic_energy_dev"].append(elastic_energy_dev_int)
     history_data["pressure_max"].append(pressure_max)
+    history_data["tau_max"].append(tau_max)
     history_data["tau_x"].append(tau_x.tolist())
     history_data["tau_y"].append(tau_y.tolist())
     history_data["p_x"].append(p_val_x.tolist())
     history_data["p_y"].append(p_val_y.tolist())
+    history_data["u_x"].append(u_val_x.tolist())
+    history_data["u_y"].append(u_val_y.tolist())
     history_data["F"].append(force)
-
+    history_data["imposed_strain"].append(imposed_strain)
+    history_data["average_stress"].append(average_stress)
+    history_data["Equivalent_modulus"].append(equivalent_modulus)
     ColorPrint.print_info(
         f"Energy: {elastic_energy_int:.6e} (Vol: {elastic_energy_vol_int:.6e}, Dev: {elastic_energy_dev_int:.6e})"
     )
@@ -637,8 +518,59 @@ def main(cfg: DictConfig):
         with open(f"{prefix}_data.json", "w") as f:
             json.dump(history_data, f)
 
-        ColorPrint.print_info(f"Results saved to {prefix}_data.json")
+        ColorPrint.print_info(f"Results saved to {os.path.abspath(prefix)}_data.json")
         ColorPrint.print_info("Linear elastic computation completed successfully")
+
+    # Return results for programmatic use
+    geometry_data = {
+        "L": L,
+        "H": H,
+        "h_div": h_div,
+        "gdim": gdim,
+        "mu": mu,
+        "kappa": k,
+        "E": E,
+        "nu": nu,
+    }
+    # Print equivalent modulus and theoretical comparisons
+    if comm.rank == 0:
+        aspect_ratio = L / H
+        # Convert mu, nu to kappa for compressible models
+        kappa = k  # Use the kappa from the FEM calculation
+        R = L  # Half-width for theoretical formulas
+        Delta = 1.0  # Unit displacement for pressure calculations
+
+        # Calculate theoretical values using original functions with keyword arguments
+        theories = {
+            "FEM": equivalent_modulus,
+            "2D_inc": Eeq_2d_inc(mu0=mu, H=H, R=R),
+            "2D_comp": Eeq_2d(mu0=mu, kappa0=kappa, H=H, R=R),
+            "3D_inc": Eeq_3d_inc(mu0=mu, H=H, R=R),
+            "3D_inc_exam": Eeq_3d_inc_exam(mu0=mu, H=H, R=R),
+            "3D_comp": Eeq_3d(mu0=mu, kappa0=kappa, H=H, R=R),
+        }
+
+        # Calculate theoretical pressure maxima using original functions
+        p_theories = {
+            "FEM": pressure_max,
+            "2D_inc": p_max_2d_inc(mu0=mu, Delta=Delta, H=H, R=R),
+            "2D_comp": p_max_2d(mu0=mu, kappa0=kappa, Delta=Delta, H=H, R=R),
+            "3D_inc": p_max_3d_inc(mu0=mu, Delta=Delta, H=H, R=R),
+            "3D_inc_exam": p_max_3d_inc(mu0=mu, Delta=Delta, H=H, R=R),
+            "3D_comp": p_max_3d(mu0=mu, kappa0=kappa, Delta=Delta, H=H, R=R),
+        }
+
+        ColorPrint.print_bold("=== Results Summary ===")
+        ColorPrint.print_info(f"L/H = {aspect_ratio:.2f}, μ = {mu:.3f}, κ = {k:.1f}")
+
+        ColorPrint.print_info(
+            "E_equiv: " + " | ".join([f"{k}: {v:.3f}" for k, v in theories.items()])
+        )
+        ColorPrint.print_info(
+            "p_max:   " + " | ".join([f"{k}: {v:.3f}" for k, v in p_theories.items()])
+        )
+
+    return history_data, geometry_data
 
 
 if __name__ == "__main__":

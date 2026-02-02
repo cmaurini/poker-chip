@@ -31,9 +31,12 @@ Eeq_3d_inc = formulas_paper.Eeq_3d_inc
 Eeq_3d_inc_exam = formulas_paper.Eeq_3d_inc_exam
 
 comm = MPI.COMM_WORLD
+mu = 1.0  # Shear modulus
+kappa = 500.0  # Bulk modulus
+H_base = 1.0  # Base thickness for all simulations
 
 
-def calculate_all_theory_formulas(aspect_ratios, L_base=1.0, mu0=0.59, kappa0=500.0):
+def calculate_all_theory_formulas(aspect_ratios, H_base=H_base, mu0=mu, kappa0=kappa):
     """Calculate theoretical equivalent modulus using all available formulas."""
     results = {
         "2D_incompressible": [],
@@ -44,8 +47,8 @@ def calculate_all_theory_formulas(aspect_ratios, L_base=1.0, mu0=0.59, kappa0=50
     }
 
     for ar in aspect_ratios:
-        H = L_base / ar
-        R = L_base  # For chip geometry, R ≈ L
+        H = H_base
+        R = ar * H_base  # For chip geometry, R ≈ L
 
         # 2D formulas
         results["2D_incompressible"].append(Eeq_2d_inc(mu0=mu0, H=H, R=R))
@@ -63,7 +66,7 @@ def calculate_all_theory_formulas(aspect_ratios, L_base=1.0, mu0=0.59, kappa0=50
     return results
 
 
-def create_temp_config(aspect_ratio, h_div=8, H_base=1.0):
+def create_temp_config(aspect_ratio, h_div=8, H_base=1.0, mu0=mu, kappa0=kappa):
     """Create temporary configuration files for given aspect ratio."""
     H = H_base
     L = H_base * aspect_ratio
@@ -77,9 +80,12 @@ def create_temp_config(aspect_ratio, h_div=8, H_base=1.0):
             "geometric_dimension": 2,
             "geometry_type": "chip",
         },
-        "model": {"mu": 1, "kappa": 500.0},
-        "fem": {"degree_u": 1},
-        "loading": {"body_force": [0.0, 0.0, 0.0], "loading_steps": [1.0]},
+        "model": {
+            "mu": mu0,
+            "kappa": kappa0,
+        },
+        "fem": {"degree_u": 1, "element_type": "CR"},
+        "loading": {"loading_steps": [1.0]},
         "sliding": 0,
         "solvers": {
             "elasticity": {
@@ -220,9 +226,13 @@ def main():
                     "aspect_ratio": ar,
                     "L": geometry["L"],
                     "H": geometry["H"],
+                    "mu": mu,
+                    "kappa": kappa,
                     "force": force,
                     "displacement": displacement,
                     "E_equiv": E_equiv,
+                    "pressure_max": data["pressure_max"][-1],
+                    "tau_max": data["tau_max"][-1],
                     "elastic_energy": data["elastic_energy"][-1]
                     if data["elastic_energy"]
                     else 0,
@@ -255,8 +265,11 @@ def main():
         E_equiv_data = np.array([r["E_equiv"] for r in results])
 
         # Calculate all theoretical values
+        aspect_ratios_refined = np.linspace(
+            aspect_ratios_data[0], aspect_ratios_data[-1], 100
+        )
         theory_results = calculate_all_theory_formulas(
-            aspect_ratios_data, L_base=1.0, mu0=0.59, kappa0=500.0
+            aspect_ratios_refined, H_base=H_base, mu0=mu, kappa0=kappa
         )
 
         # Create comprehensive comparison plot with all theories
@@ -287,7 +300,7 @@ def main():
 
         for i, (key, theory_values) in enumerate(theory_results.items()):
             plt.semilogx(
-                aspect_ratios_data,
+                aspect_ratios_refined,
                 theory_values,
                 linestyles[i],
                 linewidth=2,
@@ -311,38 +324,6 @@ def main():
         )
         plt.savefig(
             output_dir / "equivalent_modulus_all_theories.pdf", bbox_inches="tight"
-        )
-
-        # Create error analysis plot for all theories
-        plt.figure(figsize=(14, 8))
-
-        for i, (key, theory_values) in enumerate(theory_results.items()):
-            error = 100 * (E_equiv_data - theory_values) / theory_values
-            plt.semilogx(
-                aspect_ratios_data,
-                error,
-                linestyles[i] if i < len(linestyles) else "-",
-                linewidth=2,
-                label=f"{theory_labels[i]}",
-                color=colors[i],
-                marker="o" if i < 3 else "s",
-            )
-
-        plt.axhline(y=0, color="k", linestyle=":", alpha=0.5)
-
-        plt.xlabel("Aspect Ratio (L/H)", fontsize=12)
-        plt.ylabel("Relative Error (%)", fontsize=12)
-        plt.title(
-            "FEM vs All Theoretical Formulas: Relative Error Analysis", fontsize=14
-        )
-        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-
-        plt.savefig(
-            output_dir / "theory_comparison_all_errors.png",
-            dpi=300,
-            bbox_inches="tight",
         )
 
         # Additional plot: Energy components
@@ -381,8 +362,6 @@ def main():
         # Print comprehensive theory comparison summary
         print(f"\n=== All Theoretical Formulas Comparison ===")
 
-        # Calculate errors for all theories
-        all_errors = {}
         theory_labels = [
             "2D incompressible",
             "2D compressible",
@@ -390,10 +369,6 @@ def main():
             "3D incompressible (exam)",
             "3D compressible",
         ]
-
-        for i, (key, theory_values) in enumerate(theory_results.items()):
-            error = 100 * (E_equiv_data - theory_values) / theory_values
-            all_errors[theory_labels[i]] = error
 
         # Print header
         header = f"{'AR':>6} {'FEM':>8}"
@@ -409,30 +384,11 @@ def main():
                 row += f" {theory_values[i]:10.1f}"
             print(row)
 
-        print("\n=== Relative Errors (%) ===")
         header = f"{'AR':>6}"
         for label in theory_labels:
             header += f" {label.replace(' ', '_')[:10]:>10}"
         print(header)
         print("-" * (6 + 10 * len(theory_labels)))
-
-        for i, ar in enumerate(aspect_ratios_data):
-            row = f"{ar:6.2f}"
-            for label in theory_labels:
-                row += f" {all_errors[label][i]:10.1f}"
-            print(row)
-
-        # Find best matching theory
-        print(f"\n=== Best Matching Theories (by average absolute error) ===")
-        avg_errors = {}
-        for label in theory_labels:
-            avg_errors[label] = np.mean(np.abs(all_errors[label]))
-            print(f"  {label}: {avg_errors[label]:.1f}%")
-
-        best_theory = min(avg_errors, key=avg_errors.get)
-        print(
-            f"\nBest overall match: {best_theory} (avg error: {avg_errors[best_theory]:.1f}%)"
-        )
 
 
 if __name__ == "__main__":

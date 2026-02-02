@@ -3,7 +3,7 @@
 from mpi4py import MPI
 
 
-def mesh_bar(L, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD):
+def mesh_bar(L, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD, verbose=True):
     facet_tag_names = {"top": 14, "bottom": 12, "left": 15, "right": 13}
 
     tag_names = {"facets": facet_tag_names}
@@ -13,6 +13,9 @@ def mesh_bar(L, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD):
 
         # Initialise gmsh and set options
         gmsh.initialize()
+        if not verbose:
+            gmsh.option.setNumber("General.Verbosity", 0)
+
         gmsh.option.setNumber("General.Terminal", 1)
 
         gmsh.option.setNumber("Mesh.Algorithm", 5)

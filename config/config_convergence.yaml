@@ -1,0 +1,26 @@
+# Configuration for mesh convergence study
+# This extends the base config_linear.yaml with multirun settings
+
+defaults:
+  - config_linear
+  - _self_
+
+# Enable multirun mode
+hydra:
+  mode: MULTIRUN
+  sweep:
+    dir: results/poker_linear/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: AR${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}
+
+# Override output naming for cleaner organization
+output_name: poker_convergence
+
+# Define parameter sweeps
+# We'll use hydra override syntax to define the parameter space
+# Usage: python mesh_convergence_study.py -m geometry.L=1.0,2.0,4.0,8.0,12.0,16.0,20.0 geometry.h_div=8,16
+
+# Default values (will be overridden by command line)
+geometry:
+  L: 2.0  # Will be swept
+  H: 1.0  # Fixed
+  h_div: 8  # Will be swept

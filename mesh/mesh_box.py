@@ -3,7 +3,9 @@ from mpi4py import MPI
 import gmsh
 
 
-def box_mesh(Lx, Ly, Lz, lc, tdim=3, order=1, msh_file=None, comm=MPI.COMM_WORLD):
+def box_mesh(
+    Lx, Ly, Lz, lc, tdim=3, order=1, msh_file=None, comm=MPI.COMM_WORLD, verbose=True
+):
     """Create a box mesh using GMSH with specified dimensions and mesh parameters.
     This function creates a rectangular box mesh centered at the origin using GMSH. The mesh includes
     tagged boundaries for each face of the box and allows specification of mesh characteristics.
@@ -60,6 +62,8 @@ def box_mesh(Lx, Ly, Lz, lc, tdim=3, order=1, msh_file=None, comm=MPI.COMM_WORLD
 
         # Initialise gmsh and set options
         gmsh.initialize()
+        if not verbose:
+            gmsh.option.setNumber("General.Verbosity", 0)
         gmsh.option.setNumber("General.Terminal", 1)
         gmsh.option.setNumber("Mesh.Algorithm", 5)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc)
