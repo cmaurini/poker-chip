@@ -20,6 +20,12 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List
 import yaml
+import sys
+import os
+
+# Add parent directory to path for importing reference module
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from reference import formulas_paper as formulas
 
 # Configure matplotlib for LaTeX rendering
 plt.rcParams.update(
@@ -135,8 +141,9 @@ def create_enhanced_equivalent_modulus_plot(
     )
 
     # Calculate Young's modulus E from mu and kappa
-    E = 9 * kappa * mu / (3 * kappa + mu)
-    equivalent_stiffness_normalized = equivalent_stiffness / E
+    E_plane_strain = formulas_paper.E_plane_strain(mu=mu, kappa=kappa)
+    E_uniaxial_stress = formulas_paper.E_uniaxial_stress(mu=mu, kappa=kappa)
+    equivalent_stiffness_normalized = equivalent_stiffness / E_uniaxial_stress
 
     # Create a new plot with FEM data overlay on top of the analytical results
     aspect_ratios_theory = np.logspace(-1, np.log10(500), 150)
@@ -191,8 +198,10 @@ def create_enhanced_equivalent_modulus_plot(
                 for ar in aspect_ratios_theory
             ]
         )
-        E_uniaxial_stress = 9 * mu * kappa_val / (3 * kappa_val + mu)
-        E_uniaxial_strain = kappa_val + (4 / 3) * mu
+        E_uniaxial_strain = formulas.E_uniaxial_strain(mu=mu, kappa=kappa_val)
+        E_uniaxial_stress = formulas.E_uniaxial_stress(mu=mu, kappa=kappa_val)
+        E_plane_strain = formulas.E_plane_strain(mu=mu, kappa=kappa_val)
+        E_2d_pure = 4.0 * kappa_val * mu / (kappa_val + mu)
 
         plt.loglog(
             aspect_ratios_theory,
@@ -203,17 +212,17 @@ def create_enhanced_equivalent_modulus_plot(
         )
 
         # Gent-Lindley paper analytical formula
-
-        Eeq_2d_ratio_comp_gent_paper_an = (1 + (aspect_ratios_theory**2)) * 4 / 3
-        Einf = E_uniaxial_strain
-        Eeq_2d_ratio_comp_gent_paper_an_comp = (
-            Eeq_2d_ratio_comp_gent_paper_an
-            * (Einf / E_uniaxial_stress)
-            / (Einf / E_uniaxial_stress + Eeq_2d_ratio_comp_gent_paper_an)
+        E_0 = E_2d_pure  # E_plane_strain
+        Einf = E_uniaxial_strain  # kappa_val + (4 / 3) * mu
+        Eeq_2d_gent_paper_an_ratio = 1 + (aspect_ratios_theory**2)
+        Eeq_2d_gent_paper_an = E_0 * Eeq_2d_gent_paper_an_ratio
+        Eeq_2d_gent_paper_an_comp = (Einf * Eeq_2d_gent_paper_an) / (
+            Eeq_2d_gent_paper_an + Einf
         )
+
         plt.loglog(
             aspect_ratios_theory,
-            Eeq_2d_ratio_comp_gent_paper_an_comp,
+            Eeq_2d_gent_paper_an_comp / E_uniaxial_stress,
             color=colors[i],
             linewidth=2.5,
             linestyle=":",

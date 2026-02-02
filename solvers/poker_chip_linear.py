@@ -106,6 +106,7 @@ def main(cfg: DictConfig):
     # Material parameters
     mu = parameters.model.get("mu", 0.59)
     k = parameters.model.get("kappa", 500.0)
+    elasticity_model = parameters.model.get("elasticity_model", "pure_2d")
 
     # Geometry parameters
     gdim = parameters.geometry.get("geometric_dimension", 3)
@@ -116,16 +117,19 @@ def main(cfg: DictConfig):
     lc = H / h_div  # Simplified mesh size calculation
 
     # Derived quantities - use plane strain (3D-like) expressions for 2D, 3D expressions for 3D
-    if gdim == 2:
-        # Plane strain: use 3D relationships for plane strain
-        lmbda = k - 2 / 3 * mu
-        nu = lmbda / (2 * (lmbda + mu))
-        E = mu * (3 * lmbda + 2 * mu) / (lmbda + mu)
-    elif gdim == 3:
-        # 3D expressions
-        lmbda = k - 2 / 3 * mu
-        nu = lmbda / (2 * (lmbda + mu))
-        E = mu * (3 * lmbda + 2 * mu) / (lmbda + mu)
+    mu = formulas_paper.mu_lame_from_kappa_mu(kappa=k, mu=mu)
+    if gdim == 3:
+        lmbda = formulas_paper.lambda_lame_from_kappa_mu(kappa=k, mu=mu, model="3D")
+        E, nu = formulas_paper.E_nu_from_kappa_mu(kappa=k, mu=mu, model="3D")
+    elif gdim == 2:
+        lmbda = formulas_paper.lambda_lame_from_kappa_mu(
+            kappa=k, mu=mu, model=elasticity_model
+        )
+        E, nu = formulas_paper.E_nu_from_kappa_mu(
+            kappa=k, mu=mu, model=elasticity_model
+        )
+    else:
+        raise ValueError("Invalid geometric dimension specified.")
 
     ColorPrint.print_info(f"Material properties: mu = {mu:.3f}, k = {k:.1f}")
     ColorPrint.print_info(f"Derived: E = {E:.3f}, nu = {nu:.3f}, lambda = {lmbda:.3f}")

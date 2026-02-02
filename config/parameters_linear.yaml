@@ -1,6 +1,7 @@
 model:
   mu: 1.0
   kappa: 500.0
+  elasticity_model: "pure_2d" # Options: "plane_strain", "plane_stress", "pure_2d"
 
 geometry:
   geometric_dimension: 2

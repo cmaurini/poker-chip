@@ -21,6 +21,140 @@ except ImportError:
 
 plt.style.use("science")
 
+
+def E_uniaxial_stress(*, mu, kappa):
+    """
+    Young's modulus (uniaxial stress condition).
+    sigma_x != 0, sigma_y = sigma_z = 0
+    kappa = bulk modulus (3D)
+    mu = shear modulus (3D)
+    """
+    return 9.0 * mu * kappa / (3.0 * kappa + mu)
+
+
+def E_uniaxial_strain(*, mu, kappa):
+    """
+    Uniaxial strain (constrained / P-wave modulus).
+    epsilon_y = epsilon_z = 0
+    kappa = bulk modulus (3D)
+    mu = shear modulus (3D)
+    """
+    return kappa + (4.0 / 3.0) * mu
+
+
+def E_plane_strain(*, mu, kappa):
+    """
+    Effective modulus under plane strain.
+    epsilon_z = 0
+    kappa = bulk modulus (3D)
+    mu = shear modulus (3D)
+    """
+    return 9.0 * mu * kappa / (kappa + 3.0 * mu)
+
+
+def mu_lame_from_kappa_mu(*, kappa, mu, model="3D"):
+    """
+    Shear Lamé parameter for different elasticity models.
+
+    Parameters
+    ----------
+    mu : float
+        Shear modulus
+    model : str
+        "3D", "plane_strain", "plane_stress", "pure_2D"
+
+    Returns
+    -------
+    mu_lame : float
+    """
+    model = model.lower()
+    if model in ("3d", "plane_strain", "plane_stress", "pure_2d"):
+        return mu
+    else:
+        raise ValueError(f"Unknown model: {model}")
+
+
+def lambda_lame_from_kappa_mu(*, kappa, mu, model="3D"):
+    """
+    First Lamé parameter for different elasticity models.
+
+    Parameters
+    ----------
+    kappa : float
+        Bulk modulus
+    mu : float
+        Shear modulus
+    model : str
+        "3D", "plane_strain", "plane_stress", "pure_2D"
+
+    Returns
+    -------
+    lambda_lame : float
+    """
+    model = model.lower()
+
+    if model in ("3d", "plane_strain"):
+        return kappa - (2.0 / 3.0) * mu
+
+    elif model == "plane_stress":
+        lam_3d = kappa - (2.0 / 3.0) * mu
+        return (2.0 * mu * lam_3d) / (lam_3d + 2.0 * mu)
+
+    elif model == "pure_2d":
+        return kappa - mu
+
+    else:
+        raise ValueError(f"Unknown model: {model}")
+
+
+def E_nu_from_kappa_mu(kappa, mu, model="3D"):
+    """
+    Return (E, nu) from (kappa, mu) for different elasticity models.
+
+    Parameters
+    ----------
+    kappa : float
+        Bulk modulus (3D for 3D/plane models, intrinsic 2D for pure_2D)
+    mu : float
+        Shear modulus
+    model : str
+        "3D", "plane_strain", "plane_stress", "pure_2D"
+
+    Returns
+    -------
+    E : float
+        Young's modulus (effective, model-dependent)
+    nu : float
+        Poisson's ratio (effective, model-dependent)
+    """
+    model = model.lower()
+
+    # --- 3D and plane strain ---
+    if model in ("3d", "plane_strain"):
+        E = 9.0 * kappa * mu / (3.0 * kappa + mu)
+        nu = (3.0 * kappa - 2.0 * mu) / (2.0 * (3.0 * kappa + mu))
+
+    # --- plane stress (effective in-plane constants) ---
+    elif model == "plane_stress":
+        # E is the same as 3D
+        E = 9.0 * kappa * mu / (3.0 * kappa + mu)
+        # effective Poisson ratio after eliminating sigma_zz
+        nu = (3.0 * kappa - 2.0 * mu) / (3.0 * kappa + 4.0 * mu)
+
+    # --- pure 2D elasticity ---
+    elif model == "pure_2d":
+        # intrinsic 2D relations
+        E = 4.0 * kappa * mu / (kappa + mu)
+        nu = (kappa - mu) / (kappa + mu)
+
+    else:
+        raise ValueError(
+            "model must be one of: '3D', 'plane_strain', 'plane_stress', 'pure_2D'"
+        )
+
+    return E, nu
+
+
 # =========================
 # UNIFIED FUNCTIONS
 # =========================
@@ -133,8 +267,8 @@ def shear_stress(
         Radius/half-width (only used for compressible case)
     kappa0 : float, optional
         Bulk modulus (required if compressible=True)
-    dim : int, default=2
-        Dimension (2 or 3)
+    geometry : str, default="2d"
+        Geometry type: "2d", "3d", "2d_plane_stress", "2d_plane_strain"
     compressible : bool, default=False
         Whether to use compressible formulation
     """
@@ -206,12 +340,10 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
         Radius/half-width
     kappa0 : float, optional
         Bulk modulus (required if compressible=True)
-    dim : int, default=2
-        Dimension (2 or 3)
+    geometry : str, default="2d"
+        Geometry type: "2d", "3d", "2d_plane_stress", "2d_plane_strain"
     compressible : bool, default=False
         Whether to use compressible formulation
-    plane_strain : bool, default=False
-        Use plane strain formulation for 2D incompressible case
     """
     if not compressible:  # Incompressible case
         if geometry == "2d":
@@ -220,7 +352,7 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
             return mu0 * R_**2
         elif geometry == "2d_plane_stress":
             # 2D plane stress incompressible equivalent modulus
-            return NotImplementedError("Plane stress formulation not implemented")
+            raise NotImplementedError("Plane stress formulation not implemented")
         elif geometry == "2d_plane_strain":
             # 2D plane strain incompressible equivalent modulus
             R_ = R / H
@@ -239,8 +371,8 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
             R_ = R / H
             return 2 * (kappa0 / 2) * (1 - (1 / (a_ * R_)) * np.tanh(a_ * R_))
         elif geometry == "2d_plane_stress":
-            # 2D plane stress incompressible equivalent modulus
-            return NotImplementedError("Plane stress formulation not implemented")
+            # 2D plane stress compressible equivalent modulus
+            raise NotImplementedError("Plane stress formulation not implemented")
         elif geometry == "3d":
             # 3D compressible equivalent modulus
             a_ = np.sqrt(3 * mu0 / (kappa0))
@@ -266,14 +398,21 @@ def max_pressure(*, mu0, Delta, H, R, kappa0=None, geometry="2d", compressible=F
         Radius/half-width
     kappa0 : float, optional
         Bulk modulus (required if compressible=True)
-    dim : int, default=2
-        Dimension (2 or 3)
+    geometry : str, default="2d"
+        Geometry type: "2d", "3d", "2d_plane_stress", "2d_plane_strain"
     compressible : bool, default=False
         Whether to use compressible formulation
     """
     if not compressible:  # Incompressible case
-        if geometry in ["2d", "2d_plane_stress", "2d_plane_strain"]:
+        if geometry == "2d":
             # 2D incompressible max pressure (at x=0)
+            delta_ = Delta / H
+            R_ = R / H
+            return (3 / 2) * mu0 * delta_ * R_**2
+        elif geometry == "2d_plane_stress":
+            raise NotImplementedError("Plane stress formulation not implemented")
+        elif geometry == "2d_plane_strain":
+            # 2D plane strain incompressible max pressure (at x=0)
             delta_ = Delta / H
             R_ = R / H
             return (3 / 2) * mu0 * delta_ * R_**2
@@ -285,8 +424,17 @@ def max_pressure(*, mu0, Delta, H, R, kappa0=None, geometry="2d", compressible=F
     else:  # Compressible case
         if kappa0 is None:
             raise ValueError("kappa0 must be provided when compressible=True")
-        if geometry in ["2d", "2d_plane_stress", "2d_plane_strain"]:
+        if geometry == "2d":
             # 2D compressible max pressure (at x=0)
+            a_ = np.sqrt(3 * mu0 / (kappa0))
+            R_ = R / H
+            delta_ = Delta / H
+            eta_ = a_ * R_
+            return kappa0 * delta_ * (1 - 1 / np.cosh(eta_))
+        elif geometry == "2d_plane_stress":
+            raise NotImplementedError("Plane stress formulation not implemented")
+        elif geometry == "2d_plane_strain":
+            # 2D plane strain compressible max pressure (at x=0)
             a_ = np.sqrt(3 * mu0 / (kappa0))
             R_ = R / H
             delta_ = Delta / H
@@ -320,14 +468,21 @@ def max_shear_stress(
         Radius/half-width
     kappa0 : float, optional
         Bulk modulus (required if compressible=True)
-    dim : int, default=2
-        Dimension (2 or 3)
+    geometry : str, default="2d"
+        Geometry type: "2d", "3d", "2d_plane_stress", "2d_plane_strain"
     compressible : bool, default=False
         Whether to use compressible formulation
     """
     if not compressible:  # Incompressible case
-        if geometry in ["2d", "2d_plane_stress", "2d_plane_strain"]:
+        if geometry == "2d":
             # 2D incompressible max shear stress (at x=R, y=H)
+            delta_ = Delta / H
+            R_ = R / H
+            return 3 * mu0 * delta_ * R_
+        elif geometry == "2d_plane_stress":
+            raise NotImplementedError("Plane stress formulation not implemented")
+        elif geometry == "2d_plane_strain":
+            # 2D plane strain incompressible max shear stress (at x=R, y=H)
             delta_ = Delta / H
             R_ = R / H
             return 3 * mu0 * delta_ * R_
@@ -341,8 +496,16 @@ def max_shear_stress(
     else:  # Compressible case
         if kappa0 is None:
             raise ValueError("kappa0 must be provided when compressible=True")
-        if geometry in ["2d", "2d_plane_stress", "2d_plane_strain"]:
+        if geometry == "2d":
             # 2D compressible max shear stress
+            a_ = np.sqrt(3 * mu0 / (kappa0))
+            R_ = R / H
+            delta_ = Delta / H
+            return np.sqrt(3 * kappa0 * mu0) * delta_ * np.tanh(a_ * R_)
+        elif geometry == "2d_plane_stress":
+            raise NotImplementedError("Plane stress formulation not implemented")
+        elif geometry == "2d_plane_strain":
+            # 2D plane strain compressible max shear stress
             a_ = np.sqrt(3 * mu0 / (kappa0))
             R_ = R / H
             delta_ = Delta / H
