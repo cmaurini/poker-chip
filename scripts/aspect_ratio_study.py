@@ -64,10 +64,10 @@ def calculate_all_theory_formulas(aspect_ratios, L_base=1.0, mu0=0.59, kappa0=50
     return results
 
 
-def create_temp_config(aspect_ratio, h_div=8, L_base=1.0):
+def create_temp_config(aspect_ratio, h_div=8, H_base=1.0):
     """Create temporary configuration files for given aspect ratio."""
-    H = L_base / aspect_ratio
-    L = L_base
+    H = H_base
+    L = H_base * aspect_ratio
 
     # Create temporary config
     temp_config = {
@@ -78,7 +78,7 @@ def create_temp_config(aspect_ratio, h_div=8, L_base=1.0):
             "geometric_dimension": 2,
             "geometry_type": "chip",
         },
-        "model": {"mu": 0.59, "kappa": 500.0},
+        "model": {"mu": 1, "kappa": 500.0},
         "fem": {"degree_u": 1},
         "loading": {"body_force": [0.0, 0.0, 0.0], "loading_steps": [1.0]},
         "sliding": 0,
@@ -113,8 +113,9 @@ def calculate_equivalent_modulus(force, displacement, geometry):
     # Total displacement between top and bottom is: 2 * Delta = 2 * displacement * H
 
     stress = force  # This is already stress (force/area) from the simulation
-    total_displacement = 2 * displacement * H  # Total displacement between surfaces
-    strain = total_displacement / H  # Engineering strain
+    strain = (
+        displacement  # The loading parameter is the strain applied (displacement/H)
+    )
 
     # Simplifies to: strain = 2 * displacement = 2 * 0.1 = 0.2
     strain = 2 * displacement

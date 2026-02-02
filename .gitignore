@@ -11,6 +11,10 @@ __pycache__/
 3d-*/
 output*/
 *output*/
+results/
+*results*/
+*/results/
+**/results/
 
 # Output files
 *.xdmf

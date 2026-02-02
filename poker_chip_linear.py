@@ -21,22 +21,226 @@ petsc4py.init(sys.argv)
 from dolfinx.io import XDMFFile
 from dolfinx.io.gmsh import model_to_mesh
 
-# Import poker_chip package
-_script_dir = Path(__file__).parent.parent  # Go up to project root
-sys.path.insert(0, str(_script_dir / "src"))
-
-from poker_chip.solvers import (
+# Import local modules
+from solvers import (
     SNESSolver,
     ColorPrint,
     assemble_scalar_reduce,
     evaluate_function,
 )
-from poker_chip.mesh import mesh_bar, mesh_chip, box_mesh
+from mesh import mesh_bar, mesh_chip, box_mesh
 
 comm = MPI.COMM_WORLD
 
 
-@hydra.main(version_base=None, config_path="../config", config_name="config_linear")
+def mesh_bar_refined(L, H, lc_center, lc_edge, edge_width, tdim, order=1):
+    """Create a refined bar mesh with smaller elements near left/right edges."""
+    from mpi4py import MPI
+
+    facet_tag_names = {"top": 14, "bottom": 12, "left": 15, "right": 13}
+    tag_names = {"facets": facet_tag_names}
+
+    if MPI.COMM_WORLD.rank == 0:
+        import gmsh
+
+        gmsh.initialize()
+        gmsh.option.setNumber("General.Terminal", 1)
+        gmsh.option.setNumber("Mesh.Algorithm", 5)
+
+        model = gmsh.model()
+        model.add("RefinedRectangle")
+        model.setCurrent("RefinedRectangle")
+
+        # Create points with different mesh sizes
+        # Corners
+        p0 = model.geo.addPoint(-L / 2, -H / 2, 0, lc_edge, tag=0)
+        p1 = model.geo.addPoint(L / 2, -H / 2, 0, lc_edge, tag=1)
+        p2 = model.geo.addPoint(L / 2, H / 2, 0.0, lc_edge, tag=2)
+        p3 = model.geo.addPoint(-L / 2, H / 2, 0, lc_edge, tag=3)
+
+        # Transition points (where refinement transitions to coarser)
+        transition_x = edge_width
+        p4 = model.geo.addPoint(-L / 2 + transition_x, -H / 2, 0, lc_center, tag=4)
+        p5 = model.geo.addPoint(L / 2 - transition_x, -H / 2, 0, lc_center, tag=5)
+        p6 = model.geo.addPoint(L / 2 - transition_x, H / 2, 0, lc_center, tag=6)
+        p7 = model.geo.addPoint(-L / 2 + transition_x, H / 2, 0, lc_center, tag=7)
+
+        # Create lines
+        bottom_left = model.geo.addLine(p0, p4, tag=12)
+        bottom_center = model.geo.addLine(p4, p5, tag=121)
+        bottom_right = model.geo.addLine(p5, p1, tag=122)
+
+        right = model.geo.addLine(p1, p2, tag=13)
+
+        top_right = model.geo.addLine(p2, p6, tag=14)
+        top_center = model.geo.addLine(p6, p7, tag=141)
+        top_left = model.geo.addLine(p7, p3, tag=142)
+
+        left = model.geo.addLine(p3, p0, tag=15)
+
+        # Interior vertical lines
+        left_vertical = model.geo.addLine(p4, p7, tag=16)
+        right_vertical = model.geo.addLine(p5, p6, tag=17)
+
+        # Create curve loops and surfaces
+        # Left refined region
+        cloop_left = model.geo.addCurveLoop(
+            [bottom_left, left_vertical, -top_left, left]
+        )
+        surf_left = model.geo.addPlaneSurface([cloop_left], tag=1)
+
+        # Center region
+        cloop_center = model.geo.addCurveLoop(
+            [bottom_center, right_vertical, -top_center, -left_vertical]
+        )
+        surf_center = model.geo.addPlaneSurface([cloop_center], tag=2)
+
+        # Right refined region
+        cloop_right = model.geo.addCurveLoop(
+            [bottom_right, right, top_right, -right_vertical]
+        )
+        surf_right = model.geo.addPlaneSurface([cloop_right], tag=3)
+
+        model.geo.synchronize()
+
+        # Physical groups
+        surface_entities = [surf_left, surf_center, surf_right]
+        model.addPhysicalGroup(tdim, surface_entities, tag=22)
+        model.setPhysicalName(tdim, 22, "Rectangle surface")
+
+        # Boundary physical groups (combine segments for each boundary)
+        model.addPhysicalGroup(tdim - 1, [12, 121, 122], tag=12)  # bottom
+        model.addPhysicalGroup(tdim - 1, [13], tag=13)  # right
+        model.addPhysicalGroup(tdim - 1, [14, 141, 142], tag=14)  # top
+        model.addPhysicalGroup(tdim - 1, [15], tag=15)  # left
+
+        for k, v in facet_tag_names.items():
+            model.setPhysicalName(tdim - 1, v, k)
+
+        model.mesh.setOrder(order)
+        model.mesh.generate(tdim)
+
+    if MPI.COMM_WORLD.rank == 0:
+        model_out = gmsh.model
+    else:
+        model_out = 0
+
+    return model_out, tdim, tag_names
+
+
+def box_mesh_refined(Lx, Ly, Lz, lc_center, lc_edge, edge_width, tdim=3, order=1):
+    """Create a refined box mesh with smaller elements near left/right edges."""
+    from mpi4py import MPI
+
+    facet_tag_names = {
+        "left": 101,
+        "right": 102,
+        "bottom": 103,
+        "top": 104,
+        "front": 105,
+        "back": 106,
+    }
+    tag_names = {"facets": facet_tag_names}
+
+    if MPI.COMM_WORLD.rank == 0:
+        import gmsh
+
+        gmsh.initialize()
+        gmsh.option.setNumber("General.Terminal", 1)
+
+        model = gmsh.model()
+        model.add("RefinedBox")
+        model.setCurrent("RefinedBox")
+
+        # Transition coordinates
+        x_trans_left = -Lx / 2 + edge_width
+        x_trans_right = Lx / 2 - edge_width
+
+        # Create the refined box with three regions in X direction
+        # Left refined region
+        box_left = model.occ.addBox(
+            -Lx / 2, -Ly / 2, -Lz / 2, edge_width, Ly, Lz, tag=1
+        )
+
+        # Center coarse region
+        box_center = model.occ.addBox(
+            x_trans_left, -Ly / 2, -Lz / 2, x_trans_right - x_trans_left, Ly, Lz, tag=2
+        )
+
+        # Right refined region
+        box_right = model.occ.addBox(
+            x_trans_right, -Ly / 2, -Lz / 2, edge_width, Ly, Lz, tag=3
+        )
+
+        model.occ.synchronize()
+
+        # Set mesh sizes using distance fields
+        # Create distance field from left and right faces
+        dist_field = model.mesh.field.add("Distance")
+        left_faces = []
+        right_faces = []
+
+        # Get all faces and identify left/right ones
+        all_faces = model.getEntities(2)
+        for _, face_id in all_faces:
+            com = model.occ.getCenterOfMass(2, face_id)
+            if abs(com[0] + Lx / 2) < 1e-6:  # Left face
+                left_faces.append(face_id)
+            elif abs(com[0] - Lx / 2) < 1e-6:  # Right face
+                right_faces.append(face_id)
+
+        model.mesh.field.setNumbers(dist_field, "FacesList", left_faces + right_faces)
+
+        # Threshold field for mesh size
+        threshold_field = model.mesh.field.add("Threshold")
+        model.mesh.field.setNumber(threshold_field, "IField", dist_field)
+        model.mesh.field.setNumber(threshold_field, "LcMin", lc_edge)
+        model.mesh.field.setNumber(threshold_field, "LcMax", lc_center)
+        model.mesh.field.setNumber(threshold_field, "DistMin", 0)
+        model.mesh.field.setNumber(threshold_field, "DistMax", edge_width)
+
+        model.mesh.field.setAsBackgroundMesh(threshold_field)
+
+        # Physical groups
+        all_volumes = model.getEntities(3)
+        volume_tags = [v[1] for v in all_volumes]
+        model.addPhysicalGroup(3, volume_tags, tag=1)
+        model.setPhysicalName(3, 1, "Box volume")
+
+        # Physical groups for boundaries
+        for k, v in facet_tag_names.items():
+            faces_for_boundary = []
+            for _, face_id in all_faces:
+                com = model.occ.getCenterOfMass(2, face_id)
+                if k == "left" and abs(com[0] + Lx / 2) < 1e-6:
+                    faces_for_boundary.append(face_id)
+                elif k == "right" and abs(com[0] - Lx / 2) < 1e-6:
+                    faces_for_boundary.append(face_id)
+                elif k == "bottom" and abs(com[1] + Ly / 2) < 1e-6:
+                    faces_for_boundary.append(face_id)
+                elif k == "top" and abs(com[1] - Ly / 2) < 1e-6:
+                    faces_for_boundary.append(face_id)
+                elif k == "back" and abs(com[2] + Lz / 2) < 1e-6:
+                    faces_for_boundary.append(face_id)
+                elif k == "front" and abs(com[2] - Lz / 2) < 1e-6:
+                    faces_for_boundary.append(face_id)
+
+            if faces_for_boundary:
+                model.addPhysicalGroup(2, faces_for_boundary, tag=v)
+                model.setPhysicalName(2, v, k)
+
+        model.mesh.setOrder(order)
+        model.mesh.generate(tdim)
+
+    if MPI.COMM_WORLD.rank == 0:
+        model_out = gmsh.model
+    else:
+        model_out = 0
+
+    return model_out, tdim, tag_names
+
+
+@hydra.main(version_base=None, config_path="./config", config_name="config_linear")
 def main(cfg: DictConfig):
     parameters = cfg
 
@@ -52,18 +256,25 @@ def main(cfg: DictConfig):
     degree_u = parameters.fem.get("degree_u", 1)  # Use standard linear elements
     lc = H / h_div  # Simplified mesh size calculation
 
-    # Derived quantities
-    lmbda = k - 2 / gdim * mu
-    nu = (1 - 2 * mu / (gdim * k)) / (gdim - 1 + 2 * mu / (gdim * k))
-    E = 2 * mu * (1 + nu)
+    # Derived quantities - use plane strain (3D-like) expressions for 2D, 3D expressions for 3D
+    if gdim == 2:
+        # Plane strain: use 3D relationships for plane strain
+        lmbda = k - 2 / 3 * mu
+        nu = lmbda / (2 * (lmbda + mu))
+        E = mu * (3 * lmbda + 2 * mu) / (lmbda + mu)
+    elif gdim == 3:
+        # 3D expressions
+        lmbda = k - 2 / 3 * mu
+        nu = lmbda / (2 * (lmbda + mu))
+        E = mu * (3 * lmbda + 2 * mu) / (lmbda + mu)
 
     ColorPrint.print_info(f"Material properties: mu = {mu:.3f}, k = {k:.1f}")
     ColorPrint.print_info(f"Derived: E = {E:.3f}, nu = {nu:.3f}, lambda = {lmbda:.3f}")
 
     # Load parameters
     output_name = parameters.get("output_name", "poker_linear")
-    load_max = parameters.get("load_max", 0.1)  # Single load for linear case
-    sliding = parameters.get("sliding", 1)
+    load_max = parameters.get("load_max", 1.0)  # Single load for linear case
+    sliding = parameters.get("sliding", 0)
     outdir_arg = parameters.get("outdir", None)
 
     # For linear elasticity, single step is sufficient
@@ -71,11 +282,9 @@ def main(cfg: DictConfig):
 
     # Create the mesh
     if gdim == 2:
-        gmsh_model, tdim, tag_names = mesh_bar(L * 2, H * 2, lc, gdim)
-    elif gdim == 3 and sliding == 0:
-        gmsh_model, tdim, tag_names = mesh_chip(L * 2, H * 2, lc, gdim)
-    elif gdim == 3 and sliding == 1:
-        gmsh_model, tdim, tag_names = box_mesh(L * 2, H * 2, L * 2, lc, gdim)
+        gmsh_model, tdim, tag_names = mesh_bar(L, H, lc, gdim)
+    elif gdim == 3:
+        gmsh_model, tdim, tag_names = box_mesh(L, H, L, lc, gdim)
 
     mesh_data = model_to_mesh(
         gmsh_model,
@@ -102,16 +311,14 @@ def main(cfg: DictConfig):
     ColorPrint.print_info(f"Output prefix: {prefix}")
 
     # Define function spaces (using Crouzeix-Raviart elements)
-    V_u = dolfinx.fem.functionspace(mesh, ("CR", degree_u, (mesh.geometry.dim,)))
+    element_type = parameters.fem.get("element", "CR")
+    if element_type == "CR":
+        V_u = dolfinx.fem.functionspace(mesh, ("CR", degree_u, (mesh.geometry.dim,)))
+    else:
+        V_u = dolfinx.fem.functionspace(
+            mesh, ("Lagrange", degree_u, (mesh.geometry.dim,))
+        )
     V_scalar = dolfinx.fem.functionspace(mesh, ("Lagrange", 1))
-
-    def CR_stabilisation(u):
-        """CR stabilization term for linear elasticity (no damage)"""
-        h = ufl.CellDiameter(mesh)
-        h_avg = (h("+") + h("-")) / 2.0
-        # For linear elasticity, use simple jump stabilization
-        stabilizing_term = (1 / h_avg * ufl.dot(ufl.jump(u), ufl.jump(u))) * ufl.dS
-        return stabilizing_term
 
     # For output visualization (CR functions can't be directly written to XDMF)
     V_u_output = dolfinx.fem.functionspace(mesh, ("Lagrange", 1, (mesh.geometry.dim,)))
@@ -254,8 +461,12 @@ def main(cfg: DictConfig):
     F = ufl.inner(sigma(u), eps(v)) * dx
 
     # ADD CR stabilization (jump stabilization on interior faces)
-    if degree_u == 1:
-        stabilizing_term_der = ufl.derivative(CR_stabilisation(u), u, v)
+    if element_type == "CR":
+        h_mesh = ufl.CellDiameter(mesh)
+        h_avg = (h_mesh("+") + h_mesh("-")) / 2.0
+        # For linear elasticity, use simple jump stabilization
+        stabilizing_term = (1 / h_avg * ufl.dot(ufl.jump(u), ufl.jump(u))) * ufl.dS
+        stabilizing_term_der = ufl.derivative(stabilizing_term, u, v)
         F += stabilizing_term_der
 
     J = ufl.derivative(F, u, du)

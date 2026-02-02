@@ -45,11 +45,8 @@ petsc4py.init(sys.argv)
 from dolfinx.io import XDMFFile
 from dolfinx.io.gmsh import model_to_mesh
 
-# Import poker_chip package
-_script_dir = Path(__file__).parent.parent  # Go up to project root
-sys.path.insert(0, str(_script_dir / "src"))
-
-from poker_chip.solvers import (
+# Import local modules
+from solvers import (
     AltMinFractureSolver as FractureSolver,
     SNESSolver,
     TAOSolver,
@@ -59,11 +56,10 @@ from poker_chip.solvers import (
     assemble_scalar_reduce,
     evaluate_function,
 )
-from poker_chip.mesh import mesh_bar, mesh_chip, box_mesh
+from mesh import mesh_bar, mesh_chip, box_mesh
 
-# from poker_chip import models as formulas_old
-from poker_chip.models import formulas_paper as formulas
-from poker_chip.models import gent_lindley_data as gl_data
+from reference import formulas_paper as formulas
+from reference import gent_lindley_data as gl_data
 
 # Configure plotting
 plt.rcParams.update({"text.usetex": True})
@@ -71,7 +67,7 @@ plt.rcParams.update({"text.usetex": True})
 comm = MPI.COMM_WORLD
 
 
-@hydra.main(version_base=None, config_path="../config", config_name="config")
+@hydra.main(version_base=None, config_path="./config", config_name="config")
 def main(cfg: DictConfig):
     parameters = cfg
 

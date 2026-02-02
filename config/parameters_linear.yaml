@@ -1,25 +1,25 @@
 model:
-  mu: 0.59
+  mu: 1.0
   kappa: 500.0
 
 geometry:
   geometric_dimension: 2
-  L: 1.0
-  H: 0.1
-  h_div: 3.0
+  L: 10.0
+  H: 1.0
+  h_div: 5.0
 
 fem:
+  element: "CR"
   degree_u: 1
-  stabilization_gamma: 0.1
 
 output_name: "poker_linear"
-load_max: 0.1
-sliding: 1
+load_max: 1.0
+sliding: 0
 
 solvers:
   elasticity:
     snes:
-      snes_type: newtonls
+      snes_type: ksponly
       snes_rtol: 1.0e-8
       snes_atol: 1.0e-8
       snes_max_it: 25
