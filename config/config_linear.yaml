@@ -4,11 +4,18 @@ defaults:
 
 hydra:
   run:
-    # Descriptive output directory structure with key parameters including mesh size
-    dir: results/${output_name}/${geometry.geometric_dimension}D_L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}_mu${model.mu}_k${model.kappa}/${now:%Y%m%d_%H%M%S}
+    # Simplified output directory with key parameters
+    dir: results/${output_name}/L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}/${now:%Y%m%d_%H%M%S}
   sweep:
-    # Output directory for parameter sweeps
-    dir: results/${output_name}/multirun/${now:%Y%m%d_%H%M%S}
-    subdir: ${geometry.geometric_dimension}D_L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}_mu${model.mu}_k${model.kappa}/${hydra.job.override_dirname}
+    # Clean multirun directory structure
+    dir: results/${output_name}/multirun_${now:%Y%m%d_%H%M%S}
+    subdir: L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}_${geometry.geometric_dimension}D
   job:
     chdir: true
+    config:
+      override_dirname:
+        kv_sep: '='
+        item_sep: '_'
+        exclude_keys:
+          - output_name
+          - now

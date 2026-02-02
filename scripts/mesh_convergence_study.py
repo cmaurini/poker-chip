@@ -20,7 +20,7 @@ from hydra.core.hydra_config import HydraConfig
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from reference.formulas_paper import *
+from reference import formulas_paper
 
 
 def calculate_all_theory_formulas(aspect_ratios, H_base=1.0, mu0=1.0, kappa0=500.0):
@@ -39,23 +39,33 @@ def calculate_all_theory_formulas(aspect_ratios, H_base=1.0, mu0=1.0, kappa0=500
         R = L / 2  # Half-length for formulas
 
         # 2D incompressible
-        E_eq_2d_inc = Eeq_2d_inc(mu0=mu0, H=H, R=R)
+        E_eq_2d_inc = formulas_paper.equivalent_modulus(
+            mu0=mu0, H=H, R=R, geometry="2d", compressible=False
+        )
         results["2D_incompressible"].append(E_eq_2d_inc)
 
         # 2D compressible
-        E_eq_2d = Eeq_2d(mu0=mu0, kappa0=kappa0, H=H, R=R)
+        E_eq_2d = formulas_paper.equivalent_modulus(
+            mu0=mu0, kappa0=kappa0, H=H, R=R, geometry="2d", compressible=True
+        )
         results["2D_compressible"].append(E_eq_2d)
 
         # 3D incompressible
-        E_eq_3d_inc = Eeq_3d_inc(mu0=mu0, H=H, R=R)
+        E_eq_3d_inc = formulas_paper.equivalent_modulus(
+            mu0=mu0, H=H, R=R, geometry="3d", compressible=False
+        )
         results["3D_incompressible"].append(E_eq_3d_inc)
 
         # 3D incompressible (exam)
-        E_eq_3d_inc_exam = Eeq_3d_inc_exam(mu0=mu0, H=H, R=R)
+        E_eq_3d_inc_exam = formulas_paper.equivalent_modulus(
+            mu0=mu0, H=H, R=R, geometry="3d", compressible=False
+        )  # Note: same as 3D_incompressible for now
         results["3D_incompressible_exam"].append(E_eq_3d_inc_exam)
 
         # 3D compressible
-        E_eq_3d = Eeq_3d(mu0=mu0, kappa0=kappa0, H=H, R=R)
+        E_eq_3d = formulas_paper.equivalent_modulus(
+            mu0=mu0, kappa0=kappa0, H=H, R=R, geometry="3d", compressible=True
+        )
         results["3D_compressible"].append(E_eq_3d)
 
     return {k: np.array(v) for k, v in results.items()}

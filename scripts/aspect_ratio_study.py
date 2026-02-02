@@ -23,13 +23,6 @@ sys.path.insert(0, str(_script_dir))
 from reference import formulas_paper
 from reference import gent_lindley_data as gl_data
 
-# Extract the functions we need
-Eeq_2d = formulas_paper.Eeq_2d
-Eeq_2d_inc = formulas_paper.Eeq_2d_inc
-Eeq_3d = formulas_paper.Eeq_3d
-Eeq_3d_inc = formulas_paper.Eeq_3d_inc
-Eeq_3d_inc_exam = formulas_paper.Eeq_3d_inc_exam
-
 comm = MPI.COMM_WORLD
 mu = 1.0  # Shear modulus
 kappa = 500.0  # Bulk modulus
@@ -51,13 +44,33 @@ def calculate_all_theory_formulas(aspect_ratios, H_base=H_base, mu0=mu, kappa0=k
         R = ar * H_base  # For chip geometry, R ≈ L
 
         # 2D formulas
-        results["2D_incompressible"].append(Eeq_2d_inc(mu0=mu0, H=H, R=R))
-        results["2D_compressible"].append(Eeq_2d(mu0=mu0, kappa0=kappa0, H=H, R=R))
+        results["2D_incompressible"].append(
+            formulas_paper.equivalent_modulus(
+                mu0=mu0, H=H, R=R, geometry="2d", compressible=False
+            )
+        )
+        results["2D_compressible"].append(
+            formulas_paper.equivalent_modulus(
+                mu0=mu0, kappa0=kappa0, H=H, R=R, geometry="2d", compressible=True
+            )
+        )
 
         # 3D formulas
-        results["3D_incompressible"].append(Eeq_3d_inc(mu0=mu0, H=H, R=R))
-        results["3D_incompressible_exam"].append(Eeq_3d_inc_exam(mu0=mu0, H=H, R=R))
-        results["3D_compressible"].append(Eeq_3d(mu0=mu0, kappa0=kappa0, H=H, R=R))
+        results["3D_incompressible"].append(
+            formulas_paper.equivalent_modulus(
+                mu0=mu0, H=H, R=R, geometry="3d", compressible=False
+            )
+        )
+        results["3D_incompressible_exam"].append(
+            formulas_paper.equivalent_modulus(
+                mu0=mu0, H=H, R=R, geometry="3d", compressible=False
+            )  # Note: same as 3D_incompressible for now
+        )
+        results["3D_compressible"].append(
+            formulas_paper.equivalent_modulus(
+                mu0=mu0, kappa0=kappa0, H=H, R=R, geometry="3d", compressible=True
+            )
+        )
 
     # Convert to numpy arrays
     for key in results:

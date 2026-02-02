@@ -5,7 +5,7 @@ import numpy as np
 import yaml
 from poker_chip.models import formulas
 from poker_chip.solvers.plots import plot_energies2
-import poker_chip.models.formulas_paper as formulas
+from reference import formulas_paper as formulas
 
 
 def plot_energies_pdf(params, history_data, outpath):
@@ -33,7 +33,10 @@ def plot_force_pdf(params, history_data, outpath):
     )
     plt.plot(
         loads,
-        formulas.Eeq_2d(mu0=mu, kappa0=k_2d, H=H, R=L) * loads,
+        formulas.equivalent_modulus(
+            mu0=mu, kappa0=k_2d, H=H, R=L, geometry="2d", compressible=True
+        )
+        * loads,
         ".-",
     )
     plt.plot(

@@ -191,7 +191,7 @@ if __name__ == "__main__":
     import numpy as np
     from matplotlib import pyplot as plt
     import os
-    from formulas_paper import Eeq_3d
+    import formulas_paper
 
     # plot original and corrected data
 
@@ -215,15 +215,17 @@ if __name__ == "__main__":
     #    label="Eeq_3d analytical",
     # )
     # add incompressible estimate
-    from formulas_paper import (
-        Eeq_3d_inc,
-        Eeq_3d_inc_exam,
-        p_max_3d_inc,
-    )
 
     mu_GL = 0.2  # MPa, fitted value from Gent and Lindley data E=18kg/cm^2, mu=6kg/cm^2=0.59MPa
-    Eeq_3d_inc_vals = Eeq_3d_inc(mu0=mu_GL / 2, H=H_GL, R=R_GL) * eta_vals
-    p_max_3d_inc_vals = p_max_3d_inc(mu0=mu_GL, Delta=eta_vals * H_GL, H=H_GL, R=R_GL)
+    Eeq_3d_inc_vals = (
+        formulas_paper.equivalent_modulus(
+            mu0=mu_GL / 2, H=H_GL, R=R_GL, geometry="3d", compressible=False
+        )
+        * eta_vals
+    )
+    p_max_3d_inc_vals = formulas_paper.max_pressure(
+        mu0=mu_GL, Delta=eta_vals * H_GL, H=H_GL, R=R_GL, geometry="3d", compressible=False
+    )
     plt.plot(
         eta_vals,
         Eeq_3d_inc_vals,
@@ -232,7 +234,10 @@ if __name__ == "__main__":
     )
     plt.plot(
         eta_vals,
-        Eeq_3d_inc_exam(mu0=mu_GL, H=H_GL, R=R_GL) * eta_vals,
+        formulas_paper.equivalent_modulus(
+            mu0=mu_GL, H=H_GL, R=R_GL, geometry="3d", compressible=False
+        )
+        * eta_vals,
         "g:",
         label="Eeq_3d incompressible exam",
     )

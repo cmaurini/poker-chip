@@ -824,8 +824,12 @@ def main(cfg: DictConfig):
                     lw=2,
                 )
                 # Ea_3D_wc = formulas-.(lmbda, mu, H, L)
-                Ea_3D_wc = formulas.Eeq_3d(mu0=mu, kappa0=k, H=H, R=L)
-                Ea_3D_inc = formulas.Eeq_3d_inc(mu0=mu, H=H, R=L)
+                Ea_3D_wc = formulas.equivalent_modulus(
+                    mu0=mu, kappa0=k, H=H, R=L, geometry="3d", compressible=True
+                )
+                Ea_3D_inc = formulas.equivalent_modulus(
+                    mu0=mu, H=H, R=L, geometry="3d", compressible=False
+                )
                 plt.plot(
                     np.array([0, 0.07]),
                     np.array([0, 0.07]) * Ea_3D_inc / mu,
@@ -936,14 +940,32 @@ def main(cfg: DictConfig):
                 if gdim == 3:
                     plt.plot(
                         x_points,
-                        formulas.p_3d_inc(x_points, mu0=mu, Delta=Delta, H=H, R=L) / mu,
+                        formulas.pressure(
+                            x_points,
+                            mu0=mu,
+                            Delta=Delta,
+                            H=H,
+                            R=L,
+                            geometry="3d",
+                            compressible=False,
+                        )
+                        / mu,
                         color="orange",
                         linewidth=1,
                         label="Asymptotic",
                     )
                 plt.plot(
                     x_points,
-                    formulas.p_3d(x_points, mu0=mu, kappa0=k, Delta=Delta, H=H, R=L)
+                    formulas.pressure(
+                        x_points,
+                        mu0=mu,
+                        kappa0=k,
+                        Delta=Delta,
+                        H=H,
+                        R=L,
+                        geometry="3d",
+                        compressible=True,
+                    )
                     / mu,
                     color="red",
                     linewidth=1,

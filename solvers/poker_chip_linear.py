@@ -35,7 +35,7 @@ from solvers import (
     evaluate_function,
 )
 from mesh import mesh_bar, mesh_chip, box_mesh
-from reference.formulas_paper import *
+from reference import formulas_paper
 
 comm = MPI.COMM_WORLD
 
@@ -552,32 +552,74 @@ def main(cfg: DictConfig):
         # Calculate theoretical values using original functions with keyword arguments
         theories = {
             "FEM": equivalent_modulus,
-            "2D_inc": Eeq_2d_inc(mu0=mu, H=H_theory, R=R_theory),
-            "2D_comp": Eeq_2d(mu0=mu, kappa0=kappa, H=H_theory, R=R_theory),
-            "3D_inc": Eeq_3d_inc(mu0=mu, H=H_theory, R=R_theory),
-            "3D_inc_exam": Eeq_3d_inc_exam(mu0=mu, H=H_theory, R=R_theory),
-            "3D_comp": Eeq_3d(mu0=mu, kappa0=kappa, H=H_theory, R=R_theory),
+            "2D_inc": formulas_paper.equivalent_modulus(
+                mu0=mu, H=H_theory, R=R_theory, geometry="2d", compressible=False
+            ),
+            "2D_comp": formulas_paper.equivalent_modulus(
+                mu0=mu, kappa0=kappa, H=H_theory, R=R_theory, geometry="2d", compressible=True
+            ),
+            "3D_inc": formulas_paper.equivalent_modulus(
+                mu0=mu, H=H_theory, R=R_theory, geometry="3d", compressible=False
+            ),
+            "3D_inc_exam": formulas_paper.equivalent_modulus(
+                mu0=mu, H=H_theory, R=R_theory, geometry="3d", compressible=False
+            ),  # Note: same as 3D_inc for now
+            "3D_comp": formulas_paper.equivalent_modulus(
+                mu0=mu, kappa0=kappa, H=H_theory, R=R_theory, geometry="3d", compressible=True
+            ),
+            "2D_GL_analytic": (1 + (L / H) ** 2) * 4.0 / 3.0,
         }
 
         # Calculate theoretical pressure maxima using original functions
         p_theories = {
             "FEM": pressure_max,
-            "2D_inc": p_max_2d_inc(mu0=mu, Delta=Delta_theory, H=H_theory, R=R_theory),
-            "2D_comp": p_max_2d(
-                mu0=mu, kappa0=kappa, Delta=Delta_theory, H=H_theory, R=R_theory
+            "2D_inc": formulas_paper.max_pressure(
+                mu0=mu,
+                Delta=Delta_theory,
+                H=H_theory,
+                R=R_theory,
+                geometry="2d",
+                compressible=False,
             ),
-            "3D_inc": p_max_3d_inc(mu0=mu, Delta=Delta_theory, H=H_theory, R=R_theory),
-            "3D_inc_exam": p_max_3d_inc(
-                mu0=mu, Delta=Delta_theory, H=H_theory, R=R_theory
+            "2D_comp": formulas_paper.max_pressure(
+                mu0=mu,
+                kappa0=kappa,
+                Delta=Delta_theory,
+                H=H_theory,
+                R=R_theory,
+                geometry="2d",
+                compressible=True,
             ),
-            "3D_comp": p_max_3d(
-                mu0=mu, kappa0=kappa, Delta=Delta_theory, H=H_theory, R=R_theory
+            "3D_inc": formulas_paper.max_pressure(
+                mu0=mu,
+                Delta=Delta_theory,
+                H=H_theory,
+                R=R_theory,
+                geometry="3d",
+                compressible=False,
+            ),
+            "3D_inc_exam": formulas_paper.max_pressure(
+                mu0=mu,
+                Delta=Delta_theory,
+                H=H_theory,
+                R=R_theory,
+                geometry="3d",
+                compressible=False,
+            ),
+            "3D_comp": formulas_paper.max_pressure(
+                mu0=mu,
+                kappa0=kappa,
+                Delta=Delta_theory,
+                H=H_theory,
+                R=R_theory,
+                geometry="3d",
+                compressible=True,
             ),
         }
 
         ColorPrint.print_bold("=== Results Summary ===")
         ColorPrint.print_info(
-            f"L/H = {aspect_ratio:.2f}, μ = {mu:.3f}, κ = {k:.1f}, E = {E:.3f}, ν = {nu:.3f}, E_plane_strain = {E / (1 - nu**2):.3f}"
+            f"L/H = {aspect_ratio:.2f}, μ = {mu:.3f}, κ = {k:.1f}, E = {E:.3f}, ν = {nu:.3f}, E_plane_strain = {E / (1 - nu**2):.3f}, E_uniaxial_strain = {2 * mu + lmbda:.3f}"
         )
 
         ColorPrint.print_info(

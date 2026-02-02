@@ -5,14 +5,14 @@ defaults:
 hydra:
   run:
     # Output directory for single runs
-    # Structure: results/<output_name>/<slug>/<date>/<time>
-    dir: results/${output_name}/${get_run_slug:${model},${geometry}}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    # Structure: results/<output_name>/<date>_<time>
+    dir: results/${output_name}/${now:%Y%m%d_%H%M%S}
   sweep:
-    # Output directory for sweeps (multirun)
-    # Structure: results/<output_name>/multirun/<date>/<time>
-    dir: results/${output_name}/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
-    # Subdirectory for each job in the sweep, named after the changing parameters
-    subdir: ${get_run_slug:${model},${geometry}}/${hydra.job.override_dirname}_job${hydra.job.num}
+    # Output directory for sweeps (multirun)  
+    # Structure: results/<output_name>/multirun_<date>_<time>
+    dir: results/${output_name}/multirun_${now:%Y%m%d_%H%M%S}
+    # Subdirectory for each job in the sweep, using simplified parameter names
+    subdir: ${hydra.job.override_dirname}
   job:
     chdir: true
     config:
@@ -22,3 +22,5 @@ hydra:
         exclude_keys:
           - output_name
           - outdir
+          - hydra.sweep.dir
+          - hydra.run.dir
