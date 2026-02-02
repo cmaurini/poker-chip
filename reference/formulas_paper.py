@@ -217,11 +217,10 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
         if geometry == "2d":
             # Pure 2D incompressible equivalent modulus
             R_ = R / H
-            return (mu0 * R_**2) / 2
+            return mu0 * R_**2
         elif geometry == "2d_plane_stress":
             # 2D plane stress incompressible equivalent modulus
-            R_ = R / H
-            return (mu0 * R_**2) / 2
+            return NotImplementedError("Plane stress formulation not implemented")
         elif geometry == "2d_plane_strain":
             # 2D plane strain incompressible equivalent modulus
             R_ = R / H
@@ -234,11 +233,14 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
     else:  # Compressible case
         if kappa0 is None:
             raise ValueError("kappa0 must be provided when compressible=True")
-        if geometry in ["2d", "2d_plane_stress", "2d_plane_strain"]:
+        if geometry in ["2d", "2d_plane_strain"]:
             # 2D compressible equivalent modulus
             a_ = np.sqrt(3 * mu0 / (kappa0))
             R_ = R / H
-            return (kappa0 / 2) * (1 - (1 / (a_ * R_)) * np.tanh(a_ * R_))
+            return 2 * (kappa0 / 2) * (1 - (1 / (a_ * R_)) * np.tanh(a_ * R_))
+        elif geometry == "2d_plane_stress":
+            # 2D plane stress incompressible equivalent modulus
+            return NotImplementedError("Plane stress formulation not implemented")
         elif geometry == "3d":
             # 3D compressible equivalent modulus
             a_ = np.sqrt(3 * mu0 / (kappa0))

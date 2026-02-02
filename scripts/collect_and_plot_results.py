@@ -180,8 +180,7 @@ def create_enhanced_equivalent_modulus_plot(
         kappa_val = kappa_mu_ratio * mu
         Eeq_2d_comp_ar = np.array(
             [
-                2
-                * formulas_paper.equivalent_modulus(
+                formulas_paper.equivalent_modulus(
                     mu0=mu,
                     kappa0=kappa_val,
                     H=H_base,
@@ -224,8 +223,7 @@ def create_enhanced_equivalent_modulus_plot(
     # Add incompressible limit
     Eeq_2d_inc_ar = np.array(
         [
-            2
-            * formulas_paper.equivalent_modulus(
+            formulas_paper.equivalent_modulus(
                 mu0=mu_ref, H=H_base, R=ar * H_base, geometry="2d", compressible=False
             )
             for ar in aspect_ratios_theory
@@ -400,7 +398,7 @@ def plot_analytical_shear_stress_fields(
 
     if gdim == 2:
         x = np.linspace(0, R, 400)
-        y = H / 2  # Mid-height
+        y = H  # Mid-height
 
         plt.figure(figsize=(10, 6))
         colors = plt.cm.viridis(np.linspace(0.9, 0.2, 4))
@@ -447,7 +445,7 @@ def plot_analytical_shear_stress_fields(
 
     else:  # 3D
         r = np.linspace(0, R, 400)
-        z = H / 2  # Mid-height
+        z = H  # Mid-height
 
         plt.figure(figsize=(10, 6))
         colors = plt.cm.viridis(np.linspace(0.9, 0.2, 4))
@@ -509,7 +507,13 @@ def plot_analytical_max_quantities_vs_eta(output_dir: Path, mu: float = 1.0):
     p_max_2d_comp = np.array(
         [
             formulas_paper.max_pressure(
-                mu0=mu, kappa0=k, Delta=Delta, H=H, R=R, geometry="2d", compressible=True
+                mu0=mu,
+                kappa0=k,
+                Delta=Delta,
+                H=H,
+                R=R,
+                geometry="2d",
+                compressible=True,
             )
             for k in kappa_range
         ]
@@ -522,7 +526,13 @@ def plot_analytical_max_quantities_vs_eta(output_dir: Path, mu: float = 1.0):
     p_max_3d_comp = np.array(
         [
             formulas_paper.max_pressure(
-                mu0=mu, kappa0=k, Delta=Delta, H=H, R=R, geometry="3d", compressible=True
+                mu0=mu,
+                kappa0=k,
+                Delta=Delta,
+                H=H,
+                R=R,
+                geometry="3d",
+                compressible=True,
             )
             for k in kappa_range
         ]
@@ -577,7 +587,13 @@ def plot_analytical_max_quantities_vs_eta(output_dir: Path, mu: float = 1.0):
     tau_max_2d_comp = np.array(
         [
             formulas_paper.max_shear_stress(
-                mu0=mu, kappa0=k, Delta=Delta, H=H, R=R, geometry="2d", compressible=True
+                mu0=mu,
+                kappa0=k,
+                Delta=Delta,
+                H=H,
+                R=R,
+                geometry="2d",
+                compressible=True,
             )
             for k in kappa_range
         ]
@@ -590,7 +606,13 @@ def plot_analytical_max_quantities_vs_eta(output_dir: Path, mu: float = 1.0):
     tau_max_3d_comp = np.array(
         [
             formulas_paper.max_shear_stress(
-                mu0=mu, kappa0=k, Delta=Delta, H=H, R=R, geometry="3d", compressible=True
+                mu0=mu,
+                kappa0=k,
+                Delta=Delta,
+                H=H,
+                R=R,
+                geometry="3d",
+                compressible=True,
             )
             for k in kappa_range
         ]
