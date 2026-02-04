@@ -754,17 +754,21 @@ def main(cfg: DictConfig):
         ColorPrint.print_info(
             "p_max:   " + " | ".join([f"{k}: {v:.3f}" for k, v in p_theories.items()])
         )
-        # compare computed and expected mesh volume
-        mesh_volume = assemble_scalar_reduce(
-            dolfinx.fem.form(dolfinx.fem.Constant(mesh, 1.0) * dx)
-        )
-        if gdim == 2:
-            expected_volume = 4 * L * H  # Rectangle: (2L) × (2H)
-        else:  # gdim == 3
-            expected_volume = 2 * np.pi * L**2 * H  # Cylinder: π*L²*(2H)
-        ColorPrint.print_info(
-            f"Mesh volume (computed/expected): {mesh_volume:.6e}/{expected_volume:.6e}"
-        )
+
+    # compare computed and expected mesh volume (collective operation - must be outside rank 0 block!)
+    mesh_volume = assemble_scalar_reduce(
+        dolfinx.fem.form(dolfinx.fem.Constant(mesh, 1.0) * dx)
+    )
+    if gdim == 2:
+        expected_volume = 4 * L * H  # Rectangle: (2L) × (2H)
+    else:  # gdim == 3
+        expected_volume = 2 * np.pi * L**2 * H  # Cylinder: π*L²*(2H)
+
+    mpi_print(
+        f"Mesh volume (computed/expected): {mesh_volume:.6e}/{expected_volume:.6e}"
+    )
+    mpi_print(f"[Rank {comm.rank}] Returning from main function")
+
     return history_data, geometry_data
 
 
