@@ -9,7 +9,10 @@ hydra:
   sweep:
     # Clean multirun directory structure
     dir: results/${output_name}/multirun_${now:%Y%m%d_%H%M%S}
-    subdir: L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}_${geometry.geometric_dimension}D
+    # Short, readable leaf dir name: original geometry-based name
+    # plus the solver name to avoid overwrites.
+    # Also append Hydra's per-run job index for uniqueness.
+    subdir: L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}_${geometry.geometric_dimension}D_${solver_type}_job${hydra.job.num}
   job:
     chdir: true
     config:

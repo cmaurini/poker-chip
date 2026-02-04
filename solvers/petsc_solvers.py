@@ -90,7 +90,11 @@ class SNESSolver:
         V = self.u.function_space
         self.b = dolfinx.fem.petsc.create_vector(V)
         self.a = dolfinx.fem.petsc.create_matrix(self.J_form)
-        if self.petsc_options.get("pc_type") == "gamg":
+
+        # Attach rigid body modes as near-nullspace for multigrid preconditioners.
+        # This significantly improves AMG performance for elasticity problems.
+        pc_type = self.petsc_options.get("pc_type")
+        if pc_type in {"gamg", "hypre"}:
             null_space = build_nullspace_elasticity(self.u.function_space)
             self.a.setNearNullSpace(null_space)
         snes.setFunction(self.F, self.b)
@@ -125,9 +129,7 @@ class SNESSolver:
         b: Vector to assemble the residual into.
         """
         # We need to assign the vector to the function
-        x.ghostUpdate(
-            addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD
-        )
+        x.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
         x.copy(self.u.x.petsc_vec)
         self.u.x.scatter_forward()
 
@@ -158,9 +160,7 @@ class SNESSolver:
         # self.solver_setup()
         try:
             x = self.u.x.petsc_vec.copy()
-            x.ghostUpdate(
-                addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD
-            )
+            x.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
             self.solver.solve(None, x)
             x.copy(self.u.x.petsc_vec)
             self.u.x.scatter_forward()
@@ -249,9 +249,7 @@ class TAOSolver(SNESSolver):
         return tao
 
     def value(self, tao, x):
-        x.ghostUpdate(
-            addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD
-        )
+        x.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
         x.copy(self.u.x.petsc_vec)
         self.u.x.petsc_vec.ghostUpdate(
             addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD
@@ -266,9 +264,7 @@ class TAOSolver(SNESSolver):
         try:
             # Copy to give a autonomous vector to the solver, not linked to the function
             x = self.u.x.petsc_vec.copy()
-            x.ghostUpdate(
-                addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD
-            )
+            x.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
             self.solver.solve(x)
             x.copy(self.u.x.petsc_vec)
             self.u.x.scatter_forward()

@@ -17,6 +17,7 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 petsc4py.init(sys.argv)
+from petsc4py import PETSc
 
 from dolfinx.io import XDMFFile
 from dolfinx.io.gmsh import model_to_mesh
@@ -34,6 +35,7 @@ from solvers import (
     assemble_scalar_reduce,
     evaluate_function,
 )
+from solvers.solver_configs import configure_3d_solver
 from mesh import mesh_bar, mesh_chip, box_mesh, mesh_chip_eight
 from reference import formulas_paper
 
@@ -122,130 +124,6 @@ def plot_fields_along_lines(
 config_path = str(Path(__file__).parent.parent / "config")
 
 
-def configure_3d_solver(V_u, parameters, base_solver_options):
-    """
-    Configure optimized iterative solver options for 3D elasticity problems.
-
-    Args:
-        V_u: Function space for displacement
-        parameters: Configuration parameters
-        base_solver_options: Base solver options dictionary
-
-    Returns:
-        dict: Updated solver options for 3D problems
-    """
-    solver_options = dict(base_solver_options)
-
-    if not parameters.get("use_iterative_solver", True):
-        return solver_options
-
-    mpi_print("Using iterative solver configuration for 3D problem...")
-
-    # Get problem size for adaptive solver selection
-    num_dofs = V_u.dofmap.index_map.size_global * V_u.dofmap.index_map_bs
-    mpi_print(f"  Problem size: {num_dofs} DOFs")
-
-    # Adaptive solver selection based on problem size
-    solver_type = parameters.get("solver_type", "hypre_amg")
-    if solver_type == "auto":
-        if num_dofs < 50000:
-            solver_type = "gamg"  # GAMG for smaller problems
-        elif num_dofs < 200000:
-            solver_type = "hypre_amg"  # BoomerAMG for medium problems
-        else:
-            solver_type = (
-                "hypre_amg"  # Still BoomerAMG but with more aggressive settings
-            )
-        mpi_print(f"  Auto-selected solver: {solver_type}")
-        if num_dofs < 50000:
-            solver_type = "gamg"  # GAMG for smaller problems
-        elif num_dofs < 200000:
-            solver_type = "hypre_amg"  # BoomerAMG for medium problems
-        else:
-            solver_type = (
-                "hypre_amg"  # Still BoomerAMG but with more aggressive settings
-            )
-        print(f"  Auto-selected solver: {solver_type}")
-
-    if solver_type == "hypre_amg":
-        # BoomerAMG optimized for elasticity
-        solver_options.update(
-            {
-                "ksp_type": "cg",
-                "pc_type": "hypre",
-                "pc_hypre_type": "boomeramg",
-                "pc_hypre_boomeramg_max_iter": 1,
-                "pc_hypre_boomeramg_cycle_type": "v",
-                # Elasticity-specific settings
-                "pc_hypre_boomeramg_strong_threshold": 0.5,  # Better for elasticity
-                "pc_hypre_boomeramg_agg_nl": 2,  # Aggressive coarsening
-                "pc_hypre_boomeramg_agg_num_paths": 2,
-                "pc_hypre_boomeramg_nodal_coarsen": 1,  # Nodal coarsening for vector problems
-                "pc_hypre_boomeramg_vec_interp_variant": 1,  # Vector interpolation
-                "pc_hypre_boomeramg_nodal_relax": 1,  # Nodal relaxation
-                # Convergence settings
-                "ksp_rtol": 1.0e-8,
-                "ksp_atol": 1.0e-10,
-                "ksp_max_it": 500,  # Reduced from 1000
-                "ksp_norm_type": "unpreconditioned",  # More efficient norm calculation
-            }
-        )
-    elif solver_type == "gamg":
-        # PETSc GAMG optimized for elasticity
-        solver_options.update(
-            {
-                "ksp_type": "cg",
-                "pc_type": "gamg",
-                "pc_gamg_type": "agg",  # Aggregation AMG
-                "pc_gamg_agg_nsmooths": 1,
-                "pc_gamg_threshold": 0.02,  # Tighter threshold for elasticity
-                "pc_gamg_coarse_eq_limit": 1000,
-                "pc_gamg_reuse_interpolation": "",
-                "pc_gamg_square_graph": 2,  # Better for vector problems
-                "pc_gamg_mis_k_minimum_degree_ordering": "",
-                "ksp_rtol": 1.0e-8,
-                "ksp_atol": 1.0e-10,
-                "ksp_max_it": 500,
-                "ksp_norm_type": "unpreconditioned",
-            }
-        )
-    elif solver_type == "fieldsplit":
-        # Fieldsplit preconditioner for vector problems
-        solver_options.update(
-            {
-                "ksp_type": "fgmres",  # Flexible GMRES for variable preconditioning
-                "pc_type": "fieldsplit",
-                "pc_fieldsplit_type": "additive",
-                "fieldsplit_displacement_pc_type": "hypre",
-                "fieldsplit_displacement_pc_hypre_type": "boomeramg",
-                "ksp_rtol": 1.0e-8,
-                "ksp_atol": 1.0e-10,
-                "ksp_max_it": 500,
-            }
-        )
-    elif solver_type == "ilu":
-        # Improved Block ILU preconditioner
-        solver_options.update(
-            {
-                "ksp_type": "gmres",
-                "ksp_gmres_restart": 100,  # Larger restart
-                "pc_type": "bjacobi",
-                "sub_pc_type": "ilu",
-                "sub_pc_factor_levels": 3,  # Increased fill level
-                "sub_pc_factor_fill": 2.0,
-                "ksp_rtol": 1.0e-8,
-                "ksp_atol": 1.0e-10,
-                "ksp_max_it": 500,
-            }
-        )
-
-    mpi_print(f"  Solver type: {solver_type}")
-    mpi_print(f"  KSP type: {solver_options.get('ksp_type', 'default')}")
-    mpi_print(f"  PC type: {solver_options.get('pc_type', 'default')}")
-
-    return solver_options
-
-
 @hydra.main(version_base=None, config_path=config_path, config_name="config_linear")
 def main(cfg: DictConfig):
     parameters = cfg
@@ -285,6 +163,7 @@ def main(cfg: DictConfig):
     output_name = parameters.get("output_name", "poker_linear")
     load_max = parameters.get("load_max", 1.0)  # Single load for linear case
     sliding = parameters.get("sliding", 0)
+    sym = parameters.get("sym", True)  # Symmetry boundary conditions
     outdir_arg = parameters.get("outdir", None)
 
     # For linear elasticity, single step is sufficient
@@ -292,16 +171,24 @@ def main(cfg: DictConfig):
 
     # Create the mesh
 
-    if gdim == 2 and sliding == 0:
-        gmsh_model, tdim, tag_names = mesh_bar(2 * L, 2 * H, lc, gdim, verbose=False)
-    elif gdim == 2 and sliding == 1:
-        gmsh_model, tdim, tag_names = mesh_bar(2 * L, 2 * H, lc, gdim, verbose=False)
-    elif gdim == 3 and sliding == 0:
-        gmsh_model, tdim, tag_names = box_mesh(2 * L, 2 * H, 2 * L, lc, gdim)
-    elif gdim == 3 and sliding == 1:
-        gmsh_model, tdim, tag_names = box_mesh(L * 2, H * 2, L * 2, lc, gdim)
-    elif gdim == 3 and sliding == 2:
-        gmsh_model, tdim, tag_names = mesh_chip_eight(L, H, lc, gdim)
+    if gdim == 2:
+        if sliding == 0:
+            gmsh_model, tdim, tag_names = mesh_bar(
+                2 * L, 2 * H, lc, gdim, verbose=False
+            )
+        elif sliding == 1:
+            gmsh_model, tdim, tag_names = mesh_bar(
+                2 * L, 2 * H, lc, gdim, verbose=False
+            )
+    elif gdim == 3:
+        if sym:
+            gmsh_model, tdim, tag_names = mesh_chip_eight(L, H, lc, gdim)
+        elif sliding == 1:
+            gmsh_model, tdim, tag_names = box_mesh(L * 2, H * 2, L * 2, lc, gdim)
+        else:
+            gmsh_model, tdim, tag_names = box_mesh(2 * L, 2 * H, 2 * L, lc, gdim)
+    else:
+        raise ValueError("Invalid geometric dimension specified.")
 
     mesh_data = model_to_mesh(
         gmsh_model,
@@ -370,7 +257,9 @@ def main(cfg: DictConfig):
         V_u, tdim - 1, np.array(bottom_facets)
     )
 
+    # Define boundary conditions based on geometry and sliding type
     if gdim == 2 and sliding == 1:
+        # 2D with sliding: constrain x-displacement on left/right faces
         left_facets = facet_tags.indices[
             facet_tags.values == tag_names["facets"]["left"]
         ]
@@ -384,62 +273,70 @@ def main(cfg: DictConfig):
             V_u.sub(0), tdim - 1, np.array(right_facets)
         )
         bcs_u = [
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),
-            dolfinx.fem.dirichletbc(0.0, dofs_u_left, V_u.sub(0)),
-            dolfinx.fem.dirichletbc(0.0, dofs_u_right, V_u.sub(0)),
+            dolfinx.fem.dirichletbc(
+                u_bcs, dofs_u_bottom
+            ),  # bottom: prescribed displacement
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),  # top: prescribed displacement
+            dolfinx.fem.dirichletbc(0.0, dofs_u_left, V_u.sub(0)),  # left: u_x = 0
+            dolfinx.fem.dirichletbc(0.0, dofs_u_right, V_u.sub(0)),  # right: u_x = 0
         ]
+
     elif gdim == 3 and sliding == 1:
+        # 3D with sliding: constrain displacements on all side faces
         dof_u_left = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["left"]),
+            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["left"])
         )
         dof_u_right = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["right"]),
+            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["right"])
         )
         dof_u_front = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(2),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["front"]),
+            V_u.sub(2), tdim - 1, facet_tags.find(tag_names["facets"]["front"])
         )
         dof_u_back = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(2),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["back"]),
+            V_u.sub(2), tdim - 1, facet_tags.find(tag_names["facets"]["back"])
         )
         bcs_u = [
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),
-            dolfinx.fem.dirichletbc(0.0, dof_u_left, V_u.sub(0)),
-            dolfinx.fem.dirichletbc(0.0, dof_u_right, V_u.sub(0)),
-            dolfinx.fem.dirichletbc(0.0, dof_u_front, V_u.sub(2)),
-            dolfinx.fem.dirichletbc(0.0, dof_u_back, V_u.sub(2)),
+            dolfinx.fem.dirichletbc(
+                u_bcs, dofs_u_bottom
+            ),  # bottom: prescribed displacement
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),  # top: prescribed displacement
+            dolfinx.fem.dirichletbc(0.0, dof_u_left, V_u.sub(0)),  # left: u_x = 0
+            dolfinx.fem.dirichletbc(0.0, dof_u_right, V_u.sub(0)),  # right: u_x = 0
+            dolfinx.fem.dirichletbc(0.0, dof_u_front, V_u.sub(2)),  # front: u_z = 0
+            dolfinx.fem.dirichletbc(0.0, dof_u_back, V_u.sub(2)),  # back: u_z = 0
         ]
-    elif gdim == 3 and sliding == 2:
-        # Symmetry boundary conditions: left u0=0, back u2=0
+
+    elif gdim == 3 and sym:
+        # 3D quarter-cylindrical domain with symmetry conditions
         dof_u_left = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["left"]),
+            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["left"])
         )
         dof_u_back = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(2),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["back"]),
+            V_u.sub(2), tdim - 1, facet_tags.find(tag_names["facets"]["back"])
+        )
+        dof_u_bottom_normal = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(1), tdim - 1, facet_tags.find(tag_names["facets"]["bottom"])
         )
         bcs_u = [
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),
-            dolfinx.fem.dirichletbc(0.0, dof_u_left, V_u.sub(0)),
-            dolfinx.fem.dirichletbc(0.0, dof_u_back, V_u.sub(2)),
+            dolfinx.fem.dirichletbc(
+                0.0, dof_u_bottom_normal, V_u.sub(1)
+            ),  # bottom: u_y = 0 (blocked)
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),  # top: prescribed displacement
+            dolfinx.fem.dirichletbc(
+                0.0, dof_u_left, V_u.sub(0)
+            ),  # left: u_x = 0 (symmetry)
+            dolfinx.fem.dirichletbc(
+                0.0, dof_u_back, V_u.sub(2)
+            ),  # back: u_z = 0 (symmetry)
         ]
+
     else:
+        # Default case: prescribed displacement on both top and bottom
         bcs_u = [
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),
+            dolfinx.fem.dirichletbc(
+                u_bcs, dofs_u_bottom
+            ),  # bottom: prescribed displacement
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),  # top: prescribed displacement
         ]
 
     k_ = dolfinx.fem.Constant(mesh, float(k))
@@ -514,7 +411,7 @@ def main(cfg: DictConfig):
 
     # Configure 3D solver if needed
     if gdim == 3:
-        solver_options = configure_3d_solver(V_u, parameters, solver_options)
+        solver_options = configure_3d_solver(V_u, parameters, solver_options, mpi_print)
 
     # Add verbose options if requested
     verbose_solver = parameters.get("verbose_solver", False)
@@ -543,7 +440,7 @@ def main(cfg: DictConfig):
         ufl.dot(normal, normal) * ds(interfaces_keys["top"])
     )
 
-    # History data
+    # History data (stored to JSON for post-processing and multirun analysis)
     history_data = {
         "load": [],
         "elastic_energy": [],
@@ -561,6 +458,11 @@ def main(cfg: DictConfig):
         "Equivalent_modulus": [],
         "imposed_strain": [],
         "average_stress": [],
+        # Solver performance metrics (per load step)
+        "solver_time": [],
+        "iterations": [],
+        "ksp_reason": [],
+        "residual_norm": [],
     }
 
     with XDMFFile(comm, f"{prefix}.xdmf", "w", encoding=XDMFFile.Encoding.HDF5) as file:
@@ -576,6 +478,7 @@ def main(cfg: DictConfig):
     if gdim == 2:
         u_bcs.interpolate(lambda x: (np.zeros_like(x[0]), Delta * x[1] / H))
     elif gdim == 3:
+        # For other 3D cases: linear variation
         u_bcs.interpolate(
             lambda x: (
                 np.zeros_like(x[0]),
@@ -597,11 +500,17 @@ def main(cfg: DictConfig):
     # Get solver statistics
     ksp = solver_u.solver.getKSP()
     its = ksp.getIterationNumber()
-    reason = ksp.getConvergedReason()
+    reason_code = ksp.getConvergedReason()
+    try:
+        reason_name = PETSc.KSP.ConvergedReason(reason_code).name
+    except Exception:
+        reason_name = str(reason_code)
+    residual_norm = ksp.getResidualNorm()
 
     mpi_print(
-        f"Solver converged in {its} iterations (reason: {reason}) - Time: {solve_time:.3f}s"
+        f"Solver converged in {its} iterations (reason: {reason_name}) - Time: {solve_time:.3f}s"
     )
+    mpi_print(f"Residual norm: {residual_norm:.3e}")
 
     # Calculate elastic energies
     elastic_energy_int = assemble_scalar_reduce(elastic_energy)
@@ -653,7 +562,6 @@ def main(cfg: DictConfig):
             * ds(interfaces_keys["top"])
         )
     imposed_strain = Delta / H
-
     average_stress = force / top_surface
     equivalent_modulus = average_stress / imposed_strain
 
@@ -684,8 +592,8 @@ def main(cfg: DictConfig):
     u_val_x = evaluate_function(u, radial_pts)  # displacement along x-line
     u_val_y = evaluate_function(u, thickness_pts)  # displacement along y-line
 
-    # Create and save plots
-    if comm.rank == 0:
+    # Create and save plots (only on rank 0 and if evaluation succeeded)
+    if comm.rank == 0 and tau_x is not None:
         plot_fields_along_lines(
             x_points, y_points, p_val_x, p_val_y, u_val_x, u_val_y, gdim, prefix
         )
@@ -693,23 +601,28 @@ def main(cfg: DictConfig):
             f"Field plots saved to {os.path.abspath(prefix)}_fields.pdf"
         )
 
-    # Store results
+    # Store results (only on rank 0 or if data is available)
     history_data["load"].append(load_max)
     history_data["elastic_energy"].append(elastic_energy_int)
     history_data["elastic_energy_vol"].append(elastic_energy_vol_int)
     history_data["elastic_energy_dev"].append(elastic_energy_dev_int)
     history_data["pressure_max"].append(pressure_max)
     history_data["tau_max"].append(tau_max)
-    history_data["tau_x"].append(tau_x.tolist())
-    history_data["tau_y"].append(tau_y.tolist())
-    history_data["p_x"].append(p_val_x.tolist())
-    history_data["p_y"].append(p_val_y.tolist())
-    history_data["u_x"].append(u_val_x.tolist())
-    history_data["u_y"].append(u_val_y.tolist())
+    history_data["tau_x"].append(tau_x.tolist() if tau_x is not None else [])
+    history_data["tau_y"].append(tau_y.tolist() if tau_y is not None else [])
+    history_data["p_x"].append(p_val_x.tolist() if p_val_x is not None else [])
+    history_data["p_y"].append(p_val_y.tolist() if p_val_y is not None else [])
+    history_data["u_x"].append(u_val_x.tolist() if u_val_x is not None else [])
+    history_data["u_y"].append(u_val_y.tolist() if u_val_y is not None else [])
     history_data["F"].append(force)
     history_data["imposed_strain"].append(imposed_strain)
     history_data["average_stress"].append(average_stress)
     history_data["Equivalent_modulus"].append(equivalent_modulus)
+    # Store solver performance metrics for this load step
+    history_data["solver_time"].append(solve_time)
+    history_data["iterations"].append(its)
+    history_data["ksp_reason"].append(reason_name)
+    history_data["residual_norm"].append(residual_norm)
     ColorPrint.print_info(
         f"Energy: {elastic_energy_int:.6e} (Vol: {elastic_energy_vol_int:.6e}, Dev: {elastic_energy_dev_int:.6e})"
     )

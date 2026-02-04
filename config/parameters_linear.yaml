@@ -16,6 +16,7 @@ fem:
 output_name: "poker_linear"
 load_max: 1.0
 sliding: 0
+sym: false  # Enable symmetry boundary conditions for quarter-cylindrical domain
 verbose_solver: false  # Set to true for detailed solver output
 use_iterative_solver: true  # Use iterative solver for 3D problems (automatic)
 solver_type: "hypre_amg"  # Options: auto, hypre_amg, gamg, fieldsplit, ilu
