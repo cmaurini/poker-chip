@@ -202,10 +202,11 @@ def create_enhanced_equivalent_modulus_plot(
         E_uniaxial_stress = formulas.E_uniaxial_stress(mu=mu, kappa=kappa_val)
         E_plane_strain = formulas.E_plane_strain(mu=mu, kappa=kappa_val)
         E_2d_pure = 4.0 * kappa_val * mu / (kappa_val + mu)
+        E_scaling = E_uniaxial_stress
 
         plt.loglog(
             aspect_ratios_theory,
-            Eeq_2d_comp_ar / E_uniaxial_stress,
+            Eeq_2d_comp_ar / E_scaling,
             color=colors[i],
             linewidth=2.5,
             label=f"2D, $\\kappa/\\mu=${kappa_mu_ratio:.1f}",
@@ -214,15 +215,17 @@ def create_enhanced_equivalent_modulus_plot(
         # Gent-Lindley paper analytical formula
         E_0 = E_2d_pure  # E_plane_strain
         Einf = E_uniaxial_strain  # kappa_val + (4 / 3) * mu
-        Eeq_2d_gent_paper_an_ratio = 1 + (aspect_ratios_theory**2)
-        Eeq_2d_gent_paper_an = E_0 * Eeq_2d_gent_paper_an_ratio
+        Eeq_2d_gent_paper_an_ratio = 1 + 1 / 4 * (
+            aspect_ratios_theory**2
+        )  # the factor is mu/E_2d = 1/4 for pure 2d
+        Eeq_2d_gent_paper_an = E_2d_pure * Eeq_2d_gent_paper_an_ratio
         Eeq_2d_gent_paper_an_comp = (Einf * Eeq_2d_gent_paper_an) / (
             Eeq_2d_gent_paper_an + Einf
         )
 
         plt.loglog(
             aspect_ratios_theory,
-            Eeq_2d_gent_paper_an_comp / E_uniaxial_stress,
+            Eeq_2d_gent_paper_an_comp / E_scaling,
             color=colors[i],
             linewidth=2.5,
             linestyle=":",
@@ -230,18 +233,18 @@ def create_enhanced_equivalent_modulus_plot(
         )
 
     # Add incompressible limit
-    Eeq_2d_inc_ar = np.array(
-        [
-            formulas_paper.equivalent_modulus(
-                mu0=mu_ref, H=H_base, R=ar * H_base, geometry="2d", compressible=False
-            )
-            for ar in aspect_ratios_theory
-        ]
+    Eeq_2d_inc_ar = formulas_paper.equivalent_modulus(
+        mu0=mu,
+        H=H_base,
+        R=aspect_ratios_theory * H_base,
+        geometry="2d",
+        compressible=False,
     )
+
     E_incompressible = 3 * mu_ref
     plt.loglog(
         aspect_ratios_theory,
-        Eeq_2d_inc_ar / E_incompressible,
+        Eeq_2d_inc_ar / E_scaling,
         color="black",
         linewidth=2.5,
         linestyle="--",
@@ -258,7 +261,9 @@ def create_enhanced_equivalent_modulus_plot(
             1,
         )[0]
         GL_E_material = 3 * gl_data.mu_GL
-        GL_Eeq_normalized = GL_Eeq_exp / GL_E_material
+        GL_Eeq_normalized = GL_Eeq_exp / (
+            E_scaling * (GL_E_material / E_uniaxial_stress)
+        )
 
         plt.scatter(
             GL_aspect_ratio,
@@ -280,8 +285,8 @@ def create_enhanced_equivalent_modulus_plot(
         equivalent_stiffness_normalized,
         "ro",
         markersize=8,
-        markerfacecolor="red",
-        markeredgecolor="darkred",
+        markerfacecolor="white",
+        markeredgecolor="gray",
         markeredgewidth=2,
         label="FEM (CR elements)",
         zorder=5,

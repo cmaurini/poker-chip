@@ -146,6 +146,8 @@ def main(cfg: DictConfig):
         gmsh_model, tdim, tag_names = mesh_chip(L * 2, H * 2, lc, gdim)
     elif gdim == 3 and sliding == 1:
         gmsh_model, tdim, tag_names = box_mesh(L * 2, H * 2, L * 2, lc, gdim)
+    elif gdim == 3 and sliding == 2:
+        gmsh_model, tdim, tag_names = mesh_chip_eight(L, H, lc, gdim)
     model_rank = 0
     mesh_comm = MPI.COMM_WORLD
     partitioner = dolfinx.mesh.create_cell_partitioner(

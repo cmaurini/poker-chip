@@ -34,10 +34,34 @@ from solvers import (
     assemble_scalar_reduce,
     evaluate_function,
 )
-from mesh import mesh_bar, mesh_chip, box_mesh
+from mesh import mesh_bar, mesh_chip, box_mesh, mesh_chip_eight
 from reference import formulas_paper
 
 comm = MPI.COMM_WORLD
+
+
+def mpi_print(*args, **kwargs):
+    """Print only from rank 0 to avoid duplicate output in parallel."""
+    if comm.rank == 0:
+        print(*args, **kwargs)
+
+
+def mpi_save_plot(filename):
+    """Save plot only from rank 0."""
+    if comm.rank == 0:
+        import matplotlib.pyplot as plt
+
+        plt.savefig(filename, bbox_inches="tight")
+        plt.close()
+
+
+def mpi_save_json(data, filename):
+    """Save JSON file only from rank 0."""
+    if comm.rank == 0:
+        import json
+
+        with open(filename, "w") as f:
+            json.dump(data, f, indent=2)
 
 
 def plot_fields_along_lines(
@@ -91,12 +115,135 @@ def plot_fields_along_lines(
     axes[1, 1].grid(True)
 
     plt.tight_layout()
-    plt.savefig(f"{prefix}_fields.pdf", bbox_inches="tight")
-    plt.close()
+    mpi_save_plot(f"{prefix}_fields.pdf")
 
 
 # Determine config path relative to script location
 config_path = str(Path(__file__).parent.parent / "config")
+
+
+def configure_3d_solver(V_u, parameters, base_solver_options):
+    """
+    Configure optimized iterative solver options for 3D elasticity problems.
+
+    Args:
+        V_u: Function space for displacement
+        parameters: Configuration parameters
+        base_solver_options: Base solver options dictionary
+
+    Returns:
+        dict: Updated solver options for 3D problems
+    """
+    solver_options = dict(base_solver_options)
+
+    if not parameters.get("use_iterative_solver", True):
+        return solver_options
+
+    mpi_print("Using iterative solver configuration for 3D problem...")
+
+    # Get problem size for adaptive solver selection
+    num_dofs = V_u.dofmap.index_map.size_global * V_u.dofmap.index_map_bs
+    mpi_print(f"  Problem size: {num_dofs} DOFs")
+
+    # Adaptive solver selection based on problem size
+    solver_type = parameters.get("solver_type", "hypre_amg")
+    if solver_type == "auto":
+        if num_dofs < 50000:
+            solver_type = "gamg"  # GAMG for smaller problems
+        elif num_dofs < 200000:
+            solver_type = "hypre_amg"  # BoomerAMG for medium problems
+        else:
+            solver_type = (
+                "hypre_amg"  # Still BoomerAMG but with more aggressive settings
+            )
+        mpi_print(f"  Auto-selected solver: {solver_type}")
+        if num_dofs < 50000:
+            solver_type = "gamg"  # GAMG for smaller problems
+        elif num_dofs < 200000:
+            solver_type = "hypre_amg"  # BoomerAMG for medium problems
+        else:
+            solver_type = (
+                "hypre_amg"  # Still BoomerAMG but with more aggressive settings
+            )
+        print(f"  Auto-selected solver: {solver_type}")
+
+    if solver_type == "hypre_amg":
+        # BoomerAMG optimized for elasticity
+        solver_options.update(
+            {
+                "ksp_type": "cg",
+                "pc_type": "hypre",
+                "pc_hypre_type": "boomeramg",
+                "pc_hypre_boomeramg_max_iter": 1,
+                "pc_hypre_boomeramg_cycle_type": "v",
+                # Elasticity-specific settings
+                "pc_hypre_boomeramg_strong_threshold": 0.5,  # Better for elasticity
+                "pc_hypre_boomeramg_agg_nl": 2,  # Aggressive coarsening
+                "pc_hypre_boomeramg_agg_num_paths": 2,
+                "pc_hypre_boomeramg_nodal_coarsen": 1,  # Nodal coarsening for vector problems
+                "pc_hypre_boomeramg_vec_interp_variant": 1,  # Vector interpolation
+                "pc_hypre_boomeramg_nodal_relax": 1,  # Nodal relaxation
+                # Convergence settings
+                "ksp_rtol": 1.0e-8,
+                "ksp_atol": 1.0e-10,
+                "ksp_max_it": 500,  # Reduced from 1000
+                "ksp_norm_type": "unpreconditioned",  # More efficient norm calculation
+            }
+        )
+    elif solver_type == "gamg":
+        # PETSc GAMG optimized for elasticity
+        solver_options.update(
+            {
+                "ksp_type": "cg",
+                "pc_type": "gamg",
+                "pc_gamg_type": "agg",  # Aggregation AMG
+                "pc_gamg_agg_nsmooths": 1,
+                "pc_gamg_threshold": 0.02,  # Tighter threshold for elasticity
+                "pc_gamg_coarse_eq_limit": 1000,
+                "pc_gamg_reuse_interpolation": "",
+                "pc_gamg_square_graph": 2,  # Better for vector problems
+                "pc_gamg_mis_k_minimum_degree_ordering": "",
+                "ksp_rtol": 1.0e-8,
+                "ksp_atol": 1.0e-10,
+                "ksp_max_it": 500,
+                "ksp_norm_type": "unpreconditioned",
+            }
+        )
+    elif solver_type == "fieldsplit":
+        # Fieldsplit preconditioner for vector problems
+        solver_options.update(
+            {
+                "ksp_type": "fgmres",  # Flexible GMRES for variable preconditioning
+                "pc_type": "fieldsplit",
+                "pc_fieldsplit_type": "additive",
+                "fieldsplit_displacement_pc_type": "hypre",
+                "fieldsplit_displacement_pc_hypre_type": "boomeramg",
+                "ksp_rtol": 1.0e-8,
+                "ksp_atol": 1.0e-10,
+                "ksp_max_it": 500,
+            }
+        )
+    elif solver_type == "ilu":
+        # Improved Block ILU preconditioner
+        solver_options.update(
+            {
+                "ksp_type": "gmres",
+                "ksp_gmres_restart": 100,  # Larger restart
+                "pc_type": "bjacobi",
+                "sub_pc_type": "ilu",
+                "sub_pc_factor_levels": 3,  # Increased fill level
+                "sub_pc_factor_fill": 2.0,
+                "ksp_rtol": 1.0e-8,
+                "ksp_atol": 1.0e-10,
+                "ksp_max_it": 500,
+            }
+        )
+
+    mpi_print(f"  Solver type: {solver_type}")
+    mpi_print(f"  KSP type: {solver_options.get('ksp_type', 'default')}")
+    mpi_print(f"  PC type: {solver_options.get('pc_type', 'default')}")
+
+    return solver_options
 
 
 @hydra.main(version_base=None, config_path=config_path, config_name="config_linear")
@@ -144,10 +291,17 @@ def main(cfg: DictConfig):
     loads = [load_max]
 
     # Create the mesh
-    if gdim == 2:
+
+    if gdim == 2 and sliding == 0:
         gmsh_model, tdim, tag_names = mesh_bar(2 * L, 2 * H, lc, gdim, verbose=False)
-    elif gdim == 3:
+    elif gdim == 2 and sliding == 1:
+        gmsh_model, tdim, tag_names = mesh_bar(2 * L, 2 * H, lc, gdim, verbose=False)
+    elif gdim == 3 and sliding == 0:
         gmsh_model, tdim, tag_names = box_mesh(2 * L, 2 * H, 2 * L, lc, gdim)
+    elif gdim == 3 and sliding == 1:
+        gmsh_model, tdim, tag_names = box_mesh(L * 2, H * 2, L * 2, lc, gdim)
+    elif gdim == 3 and sliding == 2:
+        gmsh_model, tdim, tag_names = mesh_chip_eight(L, H, lc, gdim)
 
     mesh_data = model_to_mesh(
         gmsh_model,
@@ -264,6 +418,24 @@ def main(cfg: DictConfig):
             dolfinx.fem.dirichletbc(0.0, dof_u_front, V_u.sub(2)),
             dolfinx.fem.dirichletbc(0.0, dof_u_back, V_u.sub(2)),
         ]
+    elif gdim == 3 and sliding == 2:
+        # Symmetry boundary conditions: left u0=0, back u2=0
+        dof_u_left = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(0),
+            tdim - 1,
+            facet_tags.find(tag_names["facets"]["left"]),
+        )
+        dof_u_back = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(2),
+            tdim - 1,
+            facet_tags.find(tag_names["facets"]["back"]),
+        )
+        bcs_u = [
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_bottom),
+            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),
+            dolfinx.fem.dirichletbc(0.0, dof_u_left, V_u.sub(0)),
+            dolfinx.fem.dirichletbc(0.0, dof_u_back, V_u.sub(2)),
+        ]
     else:
         bcs_u = [
             dolfinx.fem.dirichletbc(u_bcs, dofs_u_bottom),
@@ -337,13 +509,30 @@ def main(cfg: DictConfig):
 
     J = ufl.derivative(F, u, du)
 
+    # Prepare solver options
+    solver_options = dict(parameters.solvers.elasticity.snes)
+
+    # Configure 3D solver if needed
+    if gdim == 3:
+        solver_options = configure_3d_solver(V_u, parameters, solver_options)
+
+    # Add verbose options if requested
+    verbose_solver = parameters.get("verbose_solver", False)
+    if verbose_solver:
+        mpi_print("Enabling KSP monitor (iterations only)...")
+        solver_options.update(
+            {
+                "ksp_monitor": "",  # Show KSP iterations only
+            }
+        )
+
     # Define solver
     solver_u = SNESSolver(
         F,
         u,
         bcs_u,
         J_form=J,
-        petsc_options=parameters.solvers.elasticity.snes,
+        petsc_options=solver_options,
         prefix=parameters.solvers.elasticity.prefix,
     )
 
@@ -397,7 +586,22 @@ def main(cfg: DictConfig):
     u_bcs.x.scatter_forward()
 
     # Solve the linear elastic problem
+    import time
+
+    solve_start_time = time.time()
+
     solver_u.solve()
+
+    solve_time = time.time() - solve_start_time
+
+    # Get solver statistics
+    ksp = solver_u.solver.getKSP()
+    its = ksp.getIterationNumber()
+    reason = ksp.getConvergedReason()
+
+    mpi_print(
+        f"Solver converged in {its} iterations (reason: {reason}) - Time: {solve_time:.3f}s"
+    )
 
     # Calculate elastic energies
     elastic_energy_int = assemble_scalar_reduce(elastic_energy)
@@ -456,16 +660,12 @@ def main(cfg: DictConfig):
     # lines for saving fields
     tol = 0.0001  # Avoid hitting the outside of the domain
     npoints = 100
-    x_points = np.linspace(
-        -L + tol, L - tol, npoints
-    )  # Mesh is 2L wide, so from -L to +L
+    x_points = np.linspace(tol, L - tol, npoints)  # Mesh from 0 to L in x-direction
     radial_line = np.zeros((3, npoints))
     radial_line[0] = x_points
     radial_line[1] = 0.0
     thickness_line = np.zeros((3, npoints))
-    y_points = np.linspace(
-        -H + tol, H - tol, npoints
-    )  # Mesh is 2H tall, so from -H to +H
+    y_points = np.linspace(tol, H - tol, npoints)  # Mesh from 0 to H in y-direction
     thickness_line[1] = y_points
     radial_pts = np.ascontiguousarray(
         radial_line[: mesh.geometry.dim].T, dtype=np.float64
@@ -528,8 +728,7 @@ def main(cfg: DictConfig):
     if comm.rank == 0:
         import json
 
-        with open(f"{prefix}_data.json", "w") as f:
-            json.dump(history_data, f)
+        mpi_save_json(history_data, f"{prefix}_data.json")
 
         ColorPrint.print_info(f"Results saved to {os.path.abspath(prefix)}_data.json")
         ColorPrint.print_info("Linear elastic computation completed successfully")

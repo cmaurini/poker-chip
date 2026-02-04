@@ -112,7 +112,7 @@ def mesh_chip_eight(R, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD)
         model.add("SectorCylinder")
         model.setCurrent("SectorCylinder")
 
-        y0 = -H / 2
+        y0 = 0
         p0 = model.geo.addPoint(0.0, y0, 0, lc, tag=0)
         p1 = model.geo.addPoint(R, y0, 0, lc, tag=1)
         p2 = model.geo.addPoint(0, y0, R, lc, tag=2)

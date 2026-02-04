@@ -10,12 +10,16 @@ from pathlib import Path
 from mpi4py import MPI
 import dolfinx
 from dolfinx.io.gmsh import model_to_mesh
+import sys
+import os
 
+# Add parent directory to path for importing modules
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Import mesh generators
-from poker_chip.mesh.mesh_bar import mesh_bar
-from poker_chip.mesh.mesh_box import box_mesh
-from poker_chip.mesh.mesh_chip import mesh_chip, mesh_chip_eight
+from mesh.mesh_bar import mesh_bar
+from mesh.mesh_box import box_mesh
+from mesh.mesh_chip import mesh_chip, mesh_chip_eight
 
 
 # Output directory for figures
@@ -40,7 +44,7 @@ def save_mesh_figure(mesh, title, filename, facet_tags=None):
         color="lightblue",
         edge_color="black",
         line_width=1,
-        opacity=0.7,
+        opacity=0.2,
     )
     plotter.add_title(title, font_size=12)
 
