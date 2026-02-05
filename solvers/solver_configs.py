@@ -1,4 +1,4 @@
-"""Solver configurations for 3D elasticity problems.
+name"""Solver configurations for 3D elasticity problems.
 
 This module contains preconfigured solver options for various iterative
 and direct solvers optimized for elasticity problems.
@@ -68,7 +68,6 @@ def configure_3d_solver(V_u, parameters, base_solver_options, mpi_print):
                 "ksp_gmres_restart": 100,
                 "pc_type": "gamg",
                 "pc_gamg_type": "agg",
-                "pc_gamg_sym_graph": True,
                 # Parallel-specific settings
                 "pc_gamg_process_eq_limit": 50,  # Min equations per process before stopping coarsening
                 "pc_gamg_repartition": True,  # Repartition coarse grids in parallel

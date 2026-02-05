@@ -453,6 +453,7 @@ def main(cfg: DictConfig):
         "u_x": [],
         "u_y": [],
         "pressure_max": [],
+        "pressure_center": [],  # Pressure at r≈0 for analytical comparison
         "tau_max": [],
         "F": [],
         "Equivalent_modulus": [],
@@ -546,6 +547,25 @@ def main(cfg: DictConfig):
     pressure_max = comm.allreduce(np.max(np.abs(pressure_func.x.array.real)))
     tau_max = comm.allreduce(np.max(np.abs(tau_func.x.array.real)))
 
+    # Evaluate pressure at center point (r≈0) to compare with analytical formula
+    # For 3D quarter cylinder: evaluate at (x=0.001, y=H/2, z=0.001) to avoid exact corner
+    # For 2D: evaluate at (x=0.001, y=H/2)
+    tol_center = 0.001  # Small offset to avoid exact corner/boundary
+    if gdim == 3:
+        center_point = np.array([[tol_center, H / 2, tol_center]], dtype=np.float64)
+    else:
+        center_point = np.array([[tol_center, H / 2]], dtype=np.float64)
+
+    pressure_at_center = evaluate_function(pressure_func_DG1, center_point)
+    if pressure_at_center is not None and len(pressure_at_center) > 0:
+        # pressure_at_center is a 1D array with one value per point
+        pressure_center = float(np.abs(pressure_at_center.flat[0]))
+    else:
+        pressure_center = 0.0
+
+    # Use allreduce max to get the value from whichever rank owns the point
+    pressure_center = comm.allreduce(pressure_center, op=MPI.MAX)
+
     # Calculate force on top surface
     top_surface = assemble_scalar_reduce(
         ufl.dot(normal, normal) * ds(interfaces_keys["top"])
@@ -607,6 +627,7 @@ def main(cfg: DictConfig):
     history_data["elastic_energy_vol"].append(elastic_energy_vol_int)
     history_data["elastic_energy_dev"].append(elastic_energy_dev_int)
     history_data["pressure_max"].append(pressure_max)
+    history_data["pressure_center"].append(pressure_center)
     history_data["tau_max"].append(tau_max)
     history_data["tau_x"].append(tau_x.tolist() if tau_x is not None else [])
     history_data["tau_y"].append(tau_y.tolist() if tau_y is not None else [])

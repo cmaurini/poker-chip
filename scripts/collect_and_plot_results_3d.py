@@ -153,7 +153,7 @@ def create_3d_equivalent_modulus_plot(
     equivalent_stiffness_normalized = equivalent_stiffness / E_uniaxial_stress
 
     # Create analytical curves
-    aspect_ratios_theory = np.logspace(-1, np.log10(100), 150)
+    aspect_ratios_theory = np.logspace(0, np.log10(50), 150)
     H_base = 1
 
     plt.figure(figsize=(10, 6))
@@ -177,17 +177,14 @@ def create_3d_equivalent_modulus_plot(
         mu_val = 1
         kappa_val = kappa_mu_ratio * mu_val
         Eeq_3d_comp_ar = np.array(
-            [
-                formulas_paper.equivalent_modulus(
-                    mu0=mu_val,
-                    kappa0=kappa_val,
-                    H=H_base,
-                    R=ar * H_base,
-                    geometry="3d",
-                    compressible=True,
-                )
-                for ar in aspect_ratios_theory
-            ]
+            formulas_paper.equivalent_modulus(
+                mu0=mu_val,
+                kappa0=kappa_val,
+                H=H_base,
+                R=aspect_ratios_theory * H_base,
+                geometry="3d",
+                compressible=True,
+            )
         )
         E_scaling = formulas.E_uniaxial_stress(mu=mu_val, kappa=kappa_val)
 
@@ -201,16 +198,13 @@ def create_3d_equivalent_modulus_plot(
 
     # Add incompressible limit
     Eeq_3d_inc_ar = np.array(
-        [
-            formulas_paper.equivalent_modulus(
-                mu0=mu,
-                H=H_base,
-                R=ar * H_base,
-                geometry="3d",
-                compressible=False,
-            )
-            for ar in aspect_ratios_theory
-        ]
+        formulas_paper.equivalent_modulus(
+            mu0=mu,
+            H=H_base,
+            R=aspect_ratios_theory * H_base,
+            geometry="3d",
+            compressible=False,
+        )
     )
 
     plt.loglog(
@@ -221,7 +215,9 @@ def create_3d_equivalent_modulus_plot(
         linestyle="--",
         label="3D incompressible",
     )
-    gl_data.mu_GL *= 0.5
+    print(f"Nominal Gent-Lindley mu: {gl_data.mu_GL}")
+    gl_data.mu_GL *= 0.35
+    print(f"Adjusted Gent-Lindley mu: {gl_data.mu_GL}")
     # Add Gent-Lindley experimental data point
     try:
         GL_aspect_ratio = gl_data.R_GL / gl_data.H_GL
@@ -255,10 +251,10 @@ def create_3d_equivalent_modulus_plot(
         aspect_ratios,
         equivalent_stiffness_normalized,
         "ro",
-        markersize=10,
+        markersize=8,
         markerfacecolor="white",
-        markeredgecolor="red",
-        markeredgewidth=2.5,
+        markeredgecolor="black",
+        markeredgewidth=2.0,
         label="FEM 3D (CR elements)",
         zorder=5,
     )
@@ -285,9 +281,13 @@ def plot_3d_max_pressure_comparison(
 
     # Extract FEM data and material properties from runs
     aspect_ratios = np.array([run["L"] / run["H"] for run in all_runs])
-    pressure_max = np.array(
+
+    # Use pressure_center (at r≈0) if available, otherwise fall back to pressure_max
+    pressure_center = np.array(
         [
-            run.get("pressure_max", [0])[-1] if run.get("pressure_max") else 0
+            run.get("pressure_center", [0])[-1]
+            if run.get("pressure_center")
+            else (run.get("pressure_max", [0])[-1] if run.get("pressure_max") else 0)
             for run in all_runs
         ]
     )
@@ -300,7 +300,7 @@ def plot_3d_max_pressure_comparison(
     Delta_fem = load_max * H_fem
 
     # Create analytical curves with same material properties
-    aspect_ratios_theory = np.logspace(-1, np.log10(100), 150)
+    aspect_ratios_theory = np.logspace(0, np.log10(50), 150)
     H_base = H_fem
     Delta_theory = Delta_fem
     mu_theory = mu_fem
@@ -310,23 +310,21 @@ def plot_3d_max_pressure_comparison(
     # Plot analytical curves for different kappa/mu ratios
     kappa_mu_ratios = np.array([10.0, 20, 50, 100, 200, 500, 1000])
     colors = plt.cm.plasma(np.linspace(0.9, 0.2, len(kappa_mu_ratios)))
-
+    print("mu_fem:", mu_fem)
+    print("mu_theory:", mu_theory)
     # Plot compressible analytical solutions
     for i, kappa_mu_ratio in enumerate(kappa_mu_ratios):
         kappa_val = kappa_mu_ratio * mu_theory
         p_max_3d_comp_ar = np.array(
-            [
-                formulas_paper.max_pressure(
-                    mu0=mu_theory,
-                    kappa0=kappa_val,
-                    Delta=Delta_theory,
-                    H=H_base,
-                    R=ar * H_base,
-                    geometry="3d",
-                    compressible=True,
-                )
-                for ar in aspect_ratios_theory
-            ]
+            formulas_paper.max_pressure(
+                mu0=mu_theory,
+                kappa0=kappa_val,
+                Delta=Delta_theory,
+                H=H_base,
+                R=aspect_ratios_theory * H_base,
+                geometry="3d",
+                compressible=True,
+            )
         )
 
         plt.loglog(
@@ -336,22 +334,19 @@ def plot_3d_max_pressure_comparison(
             linewidth=2.5,
             label=f"3D, $\\kappa/\\mu=${kappa_mu_ratio:.0f}",
         )
-
     # Add incompressible limit
     p_max_3d_inc_ar = np.array(
-        [
-            formulas_paper.max_pressure(
-                mu0=mu_theory,
-                Delta=Delta_theory,
-                H=H_base,
-                R=ar * H_base,
-                geometry="3d",
-                compressible=False,
-            )
-            for ar in aspect_ratios_theory
-        ]
+        formulas_paper.max_pressure(
+            mu0=mu_theory,
+            Delta=Delta_theory,
+            H=H_base,
+            R=aspect_ratios_theory * H_base,
+            geometry="3d",
+            compressible=False,
+        )
     )
-
+    print("p_max_3d_inc_ar / mu_theory:", p_max_3d_inc_ar / mu_theory)
+    print("pressure_center_fem / mu_fem:", pressure_center / mu_fem)
     plt.loglog(
         aspect_ratios_theory,
         p_max_3d_inc_ar / mu_theory,
@@ -364,20 +359,20 @@ def plot_3d_max_pressure_comparison(
     # Overlay FEM results
     plt.loglog(
         aspect_ratios,
-        pressure_max / mu_fem,
-        "ro",
-        markersize=10,
+        pressure_center / mu_fem,
+        "o",
+        markersize=8,
         markerfacecolor="white",
-        markeredgecolor="red",
-        markeredgewidth=2.5,
-        label=f"FEM 3D ($\\kappa/\\mu={kappa_fem / mu_fem:.0f}$)",
+        markeredgecolor="black",
+        markeredgewidth=2.0,
+        label=f"FEM 3D at $r\\approx 0$ ($\\kappa/\\mu={kappa_fem / mu_fem:.0f}$)",
         zorder=5,
     )
 
     plt.xlabel(r"$R/H$", fontsize=14)
-    plt.ylabel(r"$p_{max}/\mu$", fontsize=14)
+    plt.ylabel(r"$p(r=0)/\mu$", fontsize=14)
     plt.title(
-        f"3D Maximum Pressure vs Aspect Ratio ($\\Delta/H={load_max:.2f}$)",
+        f"3D Maximum Pressure vs Aspect Ratio)",
         fontsize=16,
     )
     plt.legend(fontsize=11, bbox_to_anchor=(1.05, 1), loc="upper left")
