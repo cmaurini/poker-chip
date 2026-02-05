@@ -1,0 +1,25 @@
+defaults:
+  - _self_
+  - parameters
+
+
+hydra:
+  run:
+    # Simplified output directory with key parameters
+    dir: results/${output_name}/L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}/${now:%Y%m%d_%H%M%S}
+  sweep:
+    # Clean multirun directory structure
+    dir: results/${output_name}/multirun_${now:%Y%m%d_%H%M%S}
+    # Short, readable leaf dir name: original geometry-based name
+    # plus the solver name to avoid overwrites.
+    # Also append Hydra's per-run job index for uniqueness.
+    subdir: L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}_${geometry.geometric_dimension}D_${solver_type}_job${hydra.job.num}
+  job:
+    chdir: true
+    config:
+      override_dirname:
+        kv_sep: '='
+        item_sep: '_'
+        exclude_keys:
+          - output_name
+          - now

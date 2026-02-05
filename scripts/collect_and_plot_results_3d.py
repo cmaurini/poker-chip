@@ -41,6 +41,8 @@ plt.rcParams.update(
         "ytick.labelsize": 12,
     }
 )
+# choose the colormap for the plots
+colormap_plot = plt.cm.viridis  # RdPu
 
 # Add paths for local imports
 _script_dir = Path(__file__).parent.parent
@@ -160,7 +162,7 @@ def create_3d_equivalent_modulus_plot(
 
     # Plot analytical curves for different kappa/mu ratios
     kappa_mu_ratios = np.array([10.0, 20, 50, 100, 200, 500, 1000])
-    colors = plt.cm.viridis(np.linspace(0.9, 0.2, len(kappa_mu_ratios)))
+    colors = colormap_plot(np.linspace(0.9, 0.2, len(kappa_mu_ratios)))
 
     # Uniaxial stress reference line
     plt.loglog(
@@ -309,7 +311,7 @@ def plot_3d_max_pressure_comparison(
 
     # Plot analytical curves for different kappa/mu ratios
     kappa_mu_ratios = np.array([10.0, 20, 50, 100, 200, 500, 1000])
-    colors = plt.cm.plasma(np.linspace(0.9, 0.2, len(kappa_mu_ratios)))
+    colors = colormap_plot(np.linspace(0.9, 0.2, len(kappa_mu_ratios)))
     print("mu_fem:", mu_fem)
     print("mu_theory:", mu_theory)
     # Plot compressible analytical solutions

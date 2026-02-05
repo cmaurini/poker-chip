@@ -224,7 +224,12 @@ if __name__ == "__main__":
         * eta_vals
     )
     p_max_3d_inc_vals = formulas_paper.max_pressure(
-        mu0=mu_GL, Delta=eta_vals * H_GL, H=H_GL, R=R_GL, geometry="3d", compressible=False
+        mu0=mu_GL,
+        Delta=eta_vals * H_GL,
+        H=H_GL,
+        R=R_GL,
+        geometry="3d",
+        compressible=False,
     )
     plt.plot(
         eta_vals,
@@ -265,7 +270,7 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    outdir = "figures"
+    outdir = "results/figures"
     if not os.path.exists(outdir):
         os.makedirs(outdir)
     plt.savefig(os.path.join(outdir, "gent_lindley_plot.pdf"), dpi=300)
