@@ -62,10 +62,11 @@ from solvers import (
     assemble_scalar_reduce,
     evaluate_function,
 )
-from mesh import mesh_bar, mesh_chip, box_mesh
+from mesh import mesh_bar, mesh_chip, box_mesh, mesh_chip_eight
 
 from reference import formulas_paper as formulas
 from reference import gent_lindley_data as gl_data
+from reference.GL import GentLindleyData
 
 # Configure plotting
 plt.rcParams.update({"text.usetex": True})
@@ -129,6 +130,7 @@ def main(cfg: DictConfig):
     sliding = parameters.get("sliding", 1)
     full_output = parameters.get("full_output", 0)
     outdir_arg = parameters.get("outdir", None)
+    sym = parameters.get("sym", True)  # Symmetry boundary conditions
 
     if elastic == 0:
         ColorPrint.print_info(f"gamma_mu = {gamma_mu:3.2f}, gamma_k = {gamma_k:3.2f}")
@@ -139,26 +141,33 @@ def main(cfg: DictConfig):
     if unload == 1:
         loads = np.concatenate((loads, loads[::-1][1:]))
 
-    # Create the mesh of the specimen with given dimensions
     if gdim == 2:
-        gmsh_model, tdim, tag_names = mesh_bar(L * 2, H * 2, lc, gdim)
-    elif gdim == 3 and sliding == 0:
-        gmsh_model, tdim, tag_names = mesh_chip(L * 2, H * 2, lc, gdim)
-    elif gdim == 3 and sliding == 1:
-        gmsh_model, tdim, tag_names = box_mesh(L * 2, H * 2, L * 2, lc, gdim)
-    elif gdim == 3 and sliding == 2:
-        gmsh_model, tdim, tag_names = mesh_chip_eight(L, H, lc, gdim)
-    model_rank = 0
-    mesh_comm = MPI.COMM_WORLD
-    partitioner = dolfinx.mesh.create_cell_partitioner(
-        dolfinx.mesh.GhostMode.shared_facet
-    )
+        if sliding == 0:
+            gmsh_model, tdim, tag_names = mesh_bar(
+                2 * L, 2 * H, lc, gdim, verbose=False
+            )
+        elif sliding == 1:
+            gmsh_model, tdim, tag_names = mesh_bar(
+                2 * L, 2 * H, lc, gdim, verbose=False
+            )
+    elif gdim == 3:
+        if sym:
+            gmsh_model, tdim, tag_names = mesh_chip_eight(L, H, lc, gdim)
+        elif sliding == 1:
+            gmsh_model, tdim, tag_names = box_mesh(L * 2, H * 2, L * 2, lc, gdim)
+        else:
+            gmsh_model, tdim, tag_names = box_mesh(2 * L, 2 * H, 2 * L, lc, gdim)
+    else:
+        raise ValueError("Invalid geometric dimension specified.")
+
     mesh_data = model_to_mesh(
         gmsh_model,
-        mesh_comm,
-        model_rank,
+        comm,
+        0,  # model_rank
         gdim=gdim,
-        partitioner=partitioner,
+        partitioner=dolfinx.mesh.create_cell_partitioner(
+            dolfinx.mesh.GhostMode.shared_facet
+        ),
     )
     mesh, cell_tags, facet_tags = (
         mesh_data.mesh,
@@ -343,6 +352,29 @@ def main(cfg: DictConfig):
             dolfinx.fem.dirichletbc(0.0, dof_u_right, V_u.sub(0)),
             dolfinx.fem.dirichletbc(0.0, dof_u_front, V_u.sub(2)),
             dolfinx.fem.dirichletbc(0.0, dof_u_back, V_u.sub(2)),
+        ]
+    elif gdim == 3 and sym:
+        # Symmetry boundary conditions for quarter domain
+        dof_u_left = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["left"])
+        )
+        dof_u_back = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(2), tdim - 1, facet_tags.find(tag_names["facets"]["back"])
+        )
+        dof_u_bottom_normal = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(1), tdim - 1, facet_tags.find(tag_names["facets"]["bottom"])
+        )
+        bcs_u = [
+            dolfinx.fem.dirichletbc(
+                0.0, dof_u_bottom_normal, V_u.sub(1)
+            ),  # bottom: u_y = 0 (blocked)
+            dolfinx.fem.dirichletbc(u_top, dofs_u_top),  # top: prescribed displacement
+            dolfinx.fem.dirichletbc(
+                0.0, dof_u_left, V_u.sub(0)
+            ),  # left: u_x = 0 (symmetry)
+            dolfinx.fem.dirichletbc(
+                0.0, dof_u_back, V_u.sub(2)
+            ),  # back: u_z = 0 (symmetry)
         ]
     else:
         bcs_u = [
@@ -532,6 +564,9 @@ def main(cfg: DictConfig):
         "eps_nl_x": [],
         "eps_nl_y": [],
         "alt_min_it": [],
+        "error_residual_u": [],
+        "average_stress": [],
+        "average_strain": [],
     }
 
     eps_nl_expr = dolfinx.fem.Expression(
@@ -621,8 +656,6 @@ def main(cfg: DictConfig):
             alpha_diff.x.scatter_forward()
             t_alpha.stop()
 
-            """error_alpha_H1 = norm_H1(alpha_diff)
-            error_alpha_L2 = norm_L2(alpha_diff)"""
             error_alpha_max = alpha_diff.x.petsc_vec.max()[1]
 
             try:
@@ -726,8 +759,6 @@ def main(cfg: DictConfig):
             ufl.dot(sigma_sol * normal, normal) * ds(interfaces_keys["top"])
         )
 
-        force /= top_surface
-
         history_data["load"].append(t)
         history_data["alt_min_it"].append(alt_min_it)
         history_data["dissipated_energy"].append(dissipated_energy_int)
@@ -735,6 +766,9 @@ def main(cfg: DictConfig):
         history_data["elastic_volumetric_energy"].append(elastic_volumetric_energy_int)
         history_data["elastic_deviatoric_energy"].append(elastic_deviatoric_energy_int)
         history_data["F"].append(force)
+
+        history_data["average_strain"].append(Delta / H)
+        history_data["average_stress"].append(force / top_surface)
         # Only pass the required spatial dimensions for the mesh (2D or 3D)
         radial_pts = np.ascontiguousarray(
             radial_line[: mesh.geometry.dim].T, dtype=np.float64
@@ -779,209 +813,6 @@ def main(cfg: DictConfig):
             a_file.close()
 
             ColorPrint.print_info(f"Results saved to {prefix}_data.json")
-        if comm.rank == 0:
-            # plot energies
-            plt.figure(0)
-            plot_energies2(history_data, file=f"{prefix}_energies.pdf")
-            # plot altmin iterations
-            plt.plot(
-                history_data["load"],
-                history_data["alt_min_it"],
-                "o",
-            )
-            plt.savefig(f"{prefix}_alt_min_it.pdf")
-            plt.close(0)
-            # plot force
-            plt.figure(0)
-            S = 2 * L if gdim == 2 else np.pi * L**2
-            plt.plot(
-                np.array(history_data["load"]),
-                np.array(history_data["F"]) / float(mu) / float(S),
-                ".-",
-                # color="black",
-            )
-            if sliding == 1:
-                plt.plot(
-                    history_data["load"],
-                    p_cav / mu + np.array(history_data["load"]),
-                    ":",
-                    color="gray",
-                )
-            # add gridline in t_lim
-            plt.axhline(y=float(5 / 2), color="gray", linestyle="--")
-            # plt.axvline(x=float(e_c_dim), color="gray", linestyle="--")
-            if elastic == 0:
-                plt.axvline(x=float(e_c_dim_k), color="gray", linestyle="--")
-                # plt.xlabel(r"$e/e_c$")
-            plt.xlabel(r"$\Delta/H$")
-            plt.ylabel(r"$F/\mu S$")
-            plt.xlim(loads[0], loads[-1])
-            plt.grid(True)
-            if sliding == 0:
-                plt.plot(
-                    gl_data.GL_fig2_x,
-                    gl_data.GL_fig2_y_MPa / (2 * mu),
-                    "gray",
-                    label="Gent and Lindley",
-                    lw=2,
-                )
-                # Ea_3D_wc = formulas-.(lmbda, mu, H, L)
-                Ea_3D_wc = formulas.equivalent_modulus(
-                    mu0=mu, kappa0=k, H=H, R=L, geometry="3d", compressible=True
-                )
-                Ea_3D_inc = formulas.equivalent_modulus(
-                    mu0=mu, H=H, R=L, geometry="3d", compressible=False
-                )
-                plt.plot(
-                    np.array([0, 0.07]),
-                    np.array([0, 0.07]) * Ea_3D_inc / mu,
-                    "-.",
-                    color="orange",
-                    label="Incompressible model",
-                    lw=1,
-                )
-                # plt.plot(
-                #    loads,
-                #    loads * Ea_3D_wc / mu,
-                #    "r:",
-                #    label="Compressible model",
-                # )
-                # plt.plot(
-                #    loads,
-                #    loads * 3 / 8 * mu * (L / H) ** 2 / mu,
-                # )
-            plt.ylim(0, 4)
-            plt.xlim(0, max(loads))
-            plt.tight_layout()
-            plt.savefig(f"{prefix}_force.pdf")
-            plt.close(0)
-
-            color = (0.7 * (1 - (i_t / len(loads))),) * 3
-
-            fig_5 = plt.figure(7)
-            plt.plot(
-                x_points,
-                alpha_x,
-                color=color,
-                # x color="#E63946",
-                # marker="o",
-                linewidth=3,
-                label="Finite Element",
-            )
-            plt.xlabel(r"$x$")
-            plt.ylabel(r"$\alpha$")
-            plt.savefig(f"{prefix}_alpha_x.pdf", bbox_inches="tight")
-
-            fig_5 = plt.figure(6)
-            plt.plot(
-                y_points,
-                alpha_y,
-                color=color,
-                # x color="#E63946",
-                # marker="o",
-                linewidth=3,
-                label="Finite Element",
-            )
-            plt.xlabel(r"$y$")
-            plt.ylabel(r"$\alpha$")
-            plt.savefig(f"{prefix}_alpha_y.pdf", bbox_inches="tight")
-
-            fig_5 = plt.figure(5)
-            plt.plot(
-                x_points,
-                eps_nl_x,
-                color=color,
-                # x color="#E63946",
-                # marker="o",
-                linewidth=3,
-                label="Finite Element",
-            )
-            plt.xlabel(r"$x$")
-            plt.ylabel("nonlinear deformation")
-            plt.savefig(f"{prefix}_eps_nl_x.pdf", bbox_inches="tight")
-
-            fig_4 = plt.figure(4)
-            plt.plot(
-                y_points,
-                eps_nl_y,
-                color=color,
-                # x color="#E63946",
-                # marker="o",
-                linewidth=3,
-                label="Finite Element",
-            )
-            plt.xlabel(r"$y$")
-            plt.ylabel(r"$\varepsilon_\mathrm{NL}$")
-            plt.savefig(f"{prefix}_eps_nl_y.pdf", bbox_inches="tight")
-
-            fig_3 = plt.figure(3)
-            plt.plot(
-                y_points,
-                p_val_y,
-                color=color,
-                # x color="#E63946",
-                marker=".",
-                linewidth=3,
-                label="Finite Element",
-            )
-            plt.xlabel(r"$y$")
-            plt.ylabel(r"$p$")
-            plt.savefig(f"{prefix}_p_y.pdf", bbox_inches="tight")
-
-            fig_2 = plt.figure(2)
-            plt.plot(
-                x_points,
-                p_val_x / mu,
-                color=color,
-                # x color="#E63946",
-                marker="o",
-                linewidth=3,
-                label="Finite Element",
-            )
-            if sliding == 0:
-                if gdim == 3:
-                    plt.plot(
-                        x_points,
-                        formulas.pressure(
-                            x_points,
-                            mu0=mu,
-                            Delta=Delta,
-                            H=H,
-                            R=L,
-                            geometry="3d",
-                            compressible=False,
-                        )
-                        / mu,
-                        color="orange",
-                        linewidth=1,
-                        label="Asymptotic",
-                    )
-                plt.plot(
-                    x_points,
-                    formulas.pressure(
-                        x_points,
-                        mu0=mu,
-                        kappa0=k,
-                        Delta=Delta,
-                        H=H,
-                        R=L,
-                        geometry="3d",
-                        compressible=True,
-                    )
-                    / mu,
-                    color="red",
-                    linewidth=1,
-                    label="Asymptotic Compressible",
-                )
-            # plt.grid(True)
-            # plt.legend(loc=(0.2, -0.47), frame alpha=1, fontsize=20)
-            plt.xlabel(r"$r/R$")
-            plt.ylabel(r"$p/\mu$")
-
-            plt.savefig(f"{prefix}_p_x.pdf", bbox_inches="tight")
-            t_post.stop()
-
-            # list_timings(MPI.COMM_WORLD, [dolfinx.common.TimingType.wall])
 
 
 if __name__ == "__main__":

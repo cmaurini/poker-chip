@@ -9,6 +9,8 @@ geometry:
   H: 1.0
   h_div: 5.0
 
+sym: true # should be moved in geometry section
+
 fem:
   element: "CR"
   degree_u: 1
@@ -17,9 +19,9 @@ output_name: "poker_linear"
 load_max: 1.0
 sliding: 0
 sym: false  # Enable symmetry boundary conditions for quarter-cylindrical domain
-verbose_solver: false  # Set to true for detailed solver output
+verbose_solver: true  # Set to true for detailed solver output
 use_iterative_solver: true  # Use iterative solver for 3D problems (automatic)
-solver_type: "hypre_amg"  # Options: auto, hypre_amg, gamg, fieldsplit, ilu
+solver_type: "gamg"  # Options: auto, hypre_amg, gamg, fieldsplit, ilu
 
 solvers:
   elasticity:
@@ -31,3 +33,4 @@ solvers:
       ksp_type: preonly
       pc_type: lu
     prefix: "elasticity_"
+

@@ -2,16 +2,24 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy.interpolate import PchipInterpolator
 from scipy.optimize import root_scalar
+import numpy as np
+import os
 
+# Try importing your local references, otherwise warn or mock if needed
 try:
     from reference.formulas_paper import equivalent_modulus, max_pressure
-except:
+except ImportError:
     import sys
     from pathlib import Path
 
+    # Attempt to find the path relative to this file
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from reference.formulas_paper import equivalent_modulus, max_pressure
-import numpy as np
+    try:
+        from reference.formulas_paper import equivalent_modulus, max_pressure
+    except ImportError:
+        print(
+            "Warning: Could not import 'equivalent_modulus' or 'max_pressure'. Plotting will fail."
+        )
 
 
 class GentLindleyData:
@@ -21,14 +29,15 @@ class GentLindleyData:
 
     CONVERSION_FACTOR = 0.0980665
     ASPECT_RATIO_GL = 2.0 / 0.19
-    IDX_BREAK = (
-        50  # 0-based index, so x_all[50] is the last of Branch I and first of Branch II
-    )
-    IDX_BREAK2 = 64  # end of Branch II
+    IDX_BREAK = 50  # End of Branch I
+    IDX_BREAK2 = 64  # End of Branch II
 
     def __init__(self, *, x_all=None, y_kgcm2=None):
         print(f"Gent-Lindley aspect ratio: {self.ASPECT_RATIO_GL:.2f}")
-        self.colormap_plot = cm.get_cmap("viridis")
+
+        # FIX: Updated to new matplotlib API (or use plt.cm.viridis)
+        self.colormap_plot = plt.cm.viridis
+
         # Default data if not provided
         if x_all is None:
             x_all = np.array(
@@ -198,9 +207,9 @@ class GentLindleyData:
                     14.2834,
                 ]
             )
+
         self.x_all = x_all
-        self.y_mpa = y_kgcm2 * self.CONVERSION_FACTOR
-        # ...existing code...
+        # FIX: Removed duplicate assignment of self.y_mpa
         self.y_mpa = y_kgcm2 * self.CONVERSION_FACTOR
 
         self.points_I = np.column_stack(
@@ -229,8 +238,11 @@ class GentLindleyData:
         )
 
         self.colors = [self.colormap_plot(i) for i in np.linspace(0.15, 0.85, 3)]
+
+        # CRITICAL FIX: Changed max(points_I[:, 1]) to max(points_I[:, 0])
+        # Using index 1 (Y-axis) for X-range caused massive distortion.
         self.x_ranges = [
-            np.linspace(min(self.points_I[:, 0]), max(self.points_I[:, 1]), 300),
+            np.linspace(min(self.points_I[:, 0]), max(self.points_I[:, 0]), 300),
             np.linspace(self.points_II[0, 0], self.points_II[-1, 0], 300),
             np.linspace(self.points_III[0, 0], self.points_III[-1, 0], 300),
         ]
@@ -313,6 +325,7 @@ class GentLindleyData:
         f_I, f_II, f_III = self.get_branch_functions()
         x_ranges = self.get_x_ranges()
         colors = self.get_colors()
+
         m_I, b_I = self.m_I, self.b_I
         m_II, b_II = self.m_II, self.b_II
         m_III, b_III = self.m_III, self.b_III
@@ -323,6 +336,7 @@ class GentLindleyData:
             self.slope_III,
             self.slope_Ib,
         )
+
         plt.figure(figsize=(8, 4))
         plt.plot(
             x_ranges[0],
@@ -352,6 +366,7 @@ class GentLindleyData:
             (m_III, b_III, colors[2], slope_III, "III", 0.03, 0.4),
             (m_Ib, b_Ib, colors[0], slope_Ib, "Ib", 0.0, 0.5),
         ]
+
         for m, b, color, slope, branch, x_start, x_end in linear_fits:
             x_lin = np.linspace(x_start, x_end, 100)
             y_lin = m * x_lin + b
@@ -364,8 +379,10 @@ class GentLindleyData:
                 linewidth=1.5,
                 alpha=0.7,
             )
+
         plt.ylim(-0.1, 1.5)
-        plt.xlim(0, 1.2)
+        # FIX: Increased limit to 1.5 to include all data (max data is ~1.42)
+        plt.xlim(0, 1.5)
         plt.xlabel(r"$\Delta/H$", fontsize=12)
         plt.ylabel(r"$F/S \,\mathrm{{(MPa)}}$", fontsize=12)
         plt.grid(True, alpha=0.3)
@@ -373,15 +390,18 @@ class GentLindleyData:
         mu_for_plot = 0.36
         kappa_for_plot = 36
         p_c_for_plot = 5 / 2 * mu_for_plot
+
         plt.title(
             rf"Gent-Lindley Data and Linear Approximations for $\mu={mu_for_plot:.2f}$, $\kappa={kappa_for_plot:.0f}$",
             fontsize=14,
         )
 
-        xs = np.linspace(0, 1.0, 200)
-        plt.plot(
-            xs,
-            (
+        xs = np.linspace(0, 1.5, 200)
+
+        # Plot theoretical Equivalent Modulus
+        # NOTE: This depends on external import 'equivalent_modulus'
+        try:
+            y_eq = (
                 equivalent_modulus(
                     mu0=mu_for_plot,
                     H=1.0,
@@ -391,95 +411,75 @@ class GentLindleyData:
                     kappa0=kappa_for_plot,
                 )
                 * xs
-            ),
-            color="gray",
-            label=rf"$E_\mathrm{{eq}}$ for $\mu={mu_for_plot:.2f}$",
-            linewidth=3,
-            alpha=0.4,
-            linestyle="-",
-        )
+            )
+
+            plt.plot(
+                xs,
+                y_eq,
+                color="gray",
+                label=rf"$E_\mathrm{{eq}}$ for $\mu={mu_for_plot:.2f}$",
+                linewidth=3,
+                alpha=0.4,
+                linestyle="-",
+            )
+        except NameError:
+            pass
+
+        # Plot Uniaxial Strain
+        # FIX: Corrected label typo "Uxial" -> "Uniaxial"
         plt.plot(
             xs,
             p_c_for_plot + (2 / 3) * mu_for_plot * xs,
             color="gray",
-            label="Uxial strain",
+            label="Uniaxial strain",
             linewidth=3,
             alpha=0.4,
-            linestyle="-",
+            linestyle="--",
         )
 
-        cool_cmap = cm.get_cmap("cool")
-        mu_values = [mu_for_plot]
-        for i, mu_for_plot in enumerate(mu_values):
-            if len(mu_values) > 1:
-                color = cool_cmap(i / (len(mu_values) - 1))
-            else:
-                color = "gray"
-            p_c_for_plot = 5 / 2 * mu_for_plot
-            xs = np.linspace(0, 1.0, 200)
-            plt.plot(
-                xs,
-                (
-                    equivalent_modulus(
-                        mu0=mu_for_plot,
-                        H=1.0,
-                        R=self.ASPECT_RATIO_GL,
-                        geometry="3d",
-                        compressible=True,
-                        kappa0=kappa_for_plot,
-                    )
-                    * xs
-                ),
-                label=rf"$E_\mathrm{{eq}}$ for $\mu={mu_for_plot:.2f}$",
-                linewidth=3,
-                alpha=0.3,
-                linestyle="-",
-                color=color,
-            )
-            plt.plot(
-                xs,
-                p_c_for_plot + (2 / 3) * mu_for_plot * xs,
-                linewidth=3,
-                alpha=0.3,
-                linestyle="-",
-                color=color,
-            )
+        # FIX: Removed redundant loop that re-plotted the exact same lines.
+        # If you need to plot multiple Mu values, add the loop back here iterating over a list.
 
+        # Calculate Critical Pressure
         def pressure_residual(Delta):
-            obj = max_pressure(
-                mu0=1,
-                Delta=Delta,
-                H=1,
-                R=self.ASPECT_RATIO_GL,
-                geometry="3d",
-                compressible=True,
-                kappa0=kappa_for_plot,
-            ) - (5 / 2)
-            return obj
+            # NOTE: Depends on external import 'max_pressure'
+            try:
+                val = max_pressure(
+                    mu0=1,
+                    Delta=Delta,
+                    H=1,
+                    R=self.ASPECT_RATIO_GL,
+                    geometry="3d",
+                    compressible=True,
+                    kappa0=kappa_for_plot,
+                )
+                return val - (5 / 2)
+            except NameError:
+                return 1  # Fallback to avoid crash if import missing
 
-        sol_pressure = root_scalar(
-            pressure_residual, bracket=[-0.01, 0.2], method="bisect"
-        )
-        if sol_pressure.converged:
-            Delta_critical = sol_pressure.root
-            Delta_critical_inc = 10 / 3 * (0.01)
-            plt.axvline(
-                Delta_critical,
-                color="black",
-                linestyle=":",
-                linewidth=2,
-                label=f"Critical loading ($\Delta/H={Delta_critical:.2f}$)",
+        # Only attempt root finding if imports succeeded
+        if "max_pressure" in globals():
+            sol_pressure = root_scalar(
+                pressure_residual, bracket=[-0.01, 0.2], method="bisect"
             )
-        plt.legend()
+            if sol_pressure.converged:
+                Delta_critical = sol_pressure.root
+                plt.axvline(
+                    Delta_critical,
+                    color="black",
+                    linestyle=":",
+                    linewidth=2,
+                    label=f"Critical loading ($\Delta/H={Delta_critical:.2f}$)",
+                )
+
+        plt.legend(loc="upper left", bbox_to_anchor=(1, 1))
         plt.tight_layout()
         plt.savefig(save_path, dpi=300)
         plt.close()
+        print(f"Plot saved to: {os.path.abspath(save_path)}")
 
 
 if __name__ == "__main__":
     gl_data = GentLindleyData()
     gl_data.print_slopes()
     gl_data.plot_branches_and_fits()
-
-
-# %%
