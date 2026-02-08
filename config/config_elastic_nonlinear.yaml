@@ -13,7 +13,7 @@ hydra:
     # Short, readable leaf dir name: original geometry-based name
     # plus the solver name to avoid overwrites.
     # Also append Hydra's per-run job index for uniqueness.
-    subdir: L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}_${geometry.geometric_dimension}D_${hydra.job.num}
+    subdir: L${geometry.L}_H${geometry.H}_k${model.kappa}_hdiv${geometry.h_div}_${geometry.geometric_dimension}D_${hydra.job.num}
   job:
     chdir: true
     config:

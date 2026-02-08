@@ -152,6 +152,8 @@ def create_3d_equivalent_modulus_plot(
 
     # Calculate Young's modulus E from mu and kappa
     E_uniaxial_stress = formulas_paper.E_uniaxial_stress(mu=mu, kappa=kappa)
+    # Combine equivalent stiffness with uniaxial stress to get total equivalent modulus
+    # equivalent_stiffness += E_uniaxial_stress
     equivalent_stiffness_normalized = equivalent_stiffness / E_uniaxial_stress
 
     # Create analytical curves

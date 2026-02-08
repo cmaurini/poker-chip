@@ -7,7 +7,12 @@ import os
 
 # Try importing your local references, otherwise warn or mock if needed
 try:
-    from reference.formulas_paper import equivalent_modulus, max_pressure
+    from reference.formulas_paper import (
+        equivalent_modulus,
+        max_pressure,
+        uniaxial_stress_strain,
+        critical_loading_analytical,
+    )
 except ImportError:
     import sys
     from pathlib import Path
@@ -15,7 +20,12 @@ except ImportError:
     # Attempt to find the path relative to this file
     sys.path.insert(0, str(Path(__file__).parent.parent))
     try:
-        from reference.formulas_paper import equivalent_modulus, max_pressure
+        from reference.formulas_paper import (
+            equivalent_modulus,
+            max_pressure,
+            uniaxial_stress_strain,
+            critical_loading_analytical,
+        )
     except ImportError:
         print(
             "Warning: Could not import 'equivalent_modulus' or 'max_pressure'. Plotting will fail."
@@ -400,41 +410,60 @@ class GentLindleyData:
 
         # Plot theoretical Equivalent Modulus
         # NOTE: This depends on external import 'equivalent_modulus'
-        try:
-            y_eq = (
-                equivalent_modulus(
-                    mu0=mu_for_plot,
-                    H=1.0,
-                    R=self.ASPECT_RATIO_GL,
-                    geometry="3d",
-                    compressible=True,
-                    kappa0=kappa_for_plot,
-                )
-                * xs
+        y_eq = (
+            equivalent_modulus(
+                mu0=mu_for_plot,
+                H=1.0,
+                R=self.ASPECT_RATIO_GL,
+                geometry="3d",
+                compressible=True,
+                kappa0=kappa_for_plot,
             )
+            * xs
+        )
 
-            plt.plot(
-                xs,
-                y_eq,
-                color="gray",
-                label=rf"$E_\mathrm{{eq}}$ for $\mu={mu_for_plot:.2f}$",
-                linewidth=3,
-                alpha=0.4,
-                linestyle="-",
-            )
-        except NameError:
-            pass
+        plt.plot(
+            xs,
+            y_eq,
+            color="gray",
+            label=rf"$E_\mathrm{{eq}}$ for $\mu={mu_for_plot:.2f}$",
+            linewidth=3,
+            alpha=0.4,
+            linestyle="-",
+        )
 
         # Plot Uniaxial Strain
         # FIX: Corrected label typo "Uxial" -> "Uniaxial"
         plt.plot(
             xs,
-            p_c_for_plot + (2 / 3) * mu_for_plot * xs,
+            uniaxial_stress_strain(xs, p_c=p_c_for_plot, mu=mu_for_plot, dimension=3),
             color="gray",
             label="Uniaxial strain",
             linewidth=3,
             alpha=0.4,
             linestyle="--",
+        )
+
+        # Plot Critical Loading
+        load_c = critical_loading_analytical(
+            mu0=mu_for_plot,
+            H=1.0,
+            R=self.ASPECT_RATIO_GL,
+            p_c=p_c_for_plot,
+            kappa0=kappa_for_plot,
+            geometry="3d",
+            compressible=True,
+        )
+        print(
+            f"Critical load = {load_c:.3f} for p_max =  {max_pressure(mu0=mu_for_plot, Delta=load_c, H=1.0, R=self.ASPECT_RATIO_GL, kappa0=kappa_for_plot, geometry='3d', compressible=True):.3f}, mu={mu_for_plot:.2f}, kappa={kappa_for_plot:.0f}"
+        )
+        plt.axvline(
+            x=load_c / 1.0,
+            color=colors[0],
+            linestyle="--",
+            linewidth=1.0,
+            alpha=0.5,
+            label=f"Critical load $R/H={self.ASPECT_RATIO_GL:.1f}$",
         )
 
         # FIX: Removed redundant loop that re-plotted the exact same lines.

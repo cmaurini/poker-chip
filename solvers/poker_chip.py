@@ -410,12 +410,14 @@ def main(cfg: DictConfig):
     #    """Modulation of the linear elastic limit"""
     #    return ((1 - wf(alpha)) / (1 + (gamma - 1) * wf(alpha))) + k_res
 
-    def kappa(alpha, k_res=kres_a):
+    def kappa(alpha, k0=k, k_res=kres_a):
         """Modulation of the linear elastic limit"""
+        k = dolfinx.fem.Constant(mesh, k0)
         return (k * (1 - wf(alpha)) / (1 + (gamma_k - 1) * wf(alpha))) + k_res
 
-    def muf(alpha, k_res=kres_a):
+    def muf(alpha, mu_0=mu, k_res=kres_a):
         """Modulation of the linear elastic limit"""
+        mu = dolfinx.fem.Constant(mesh, mu_0)
         return (mu * (1 - wf(alpha)) / (1 + (gamma_mu - 1) * wf(alpha))) + k_res
 
     def eps_nl(eps, alpha):
@@ -567,6 +569,8 @@ def main(cfg: DictConfig):
         "error_residual_u": [],
         "average_stress": [],
         "average_strain": [],
+        "x_points": [],
+        "y_points": [],
     }
 
     eps_nl_expr = dolfinx.fem.Expression(
@@ -576,12 +580,14 @@ def main(cfg: DictConfig):
     # lines for saving fields
     tol = 0.0001  # Avoid hitting the outside of the domain
     npoints = 100
-    x_points = np.linspace(-L / 2 + tol, L / 2 - tol, npoints)
+    x_points = np.linspace(0, L, npoints)
     radial_line = np.zeros((3, npoints))
     radial_line[0] = x_points
     radial_line[1] = 0.0
     thickness_line = np.zeros((3, npoints))
-    y_points = np.linspace(-H / 2 + tol, H / 2 - tol, npoints)
+    y_points = np.linspace(0, H, npoints)
+    history_data["x_points"] = x_points.tolist()
+    history_data["y_points"] = y_points.tolist()
     thickness_line[1] = y_points
     t_post = dolfinx.common.Timer("Post_process")
     t_u = dolfinx.common.Timer("Solver_u")

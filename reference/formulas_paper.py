@@ -5,7 +5,7 @@ All functions are vectorized (NumPy-compatible).
 """
 
 import numpy as np
-from scipy.special import jv
+from scipy.special import jv, i0
 
 import scipy.special
 import numpy as np
@@ -18,18 +18,23 @@ try:
     from . import gent_lindley_data as gl_data
 except ImportError:
     import gent_lindley_data as gl_data
+from scipy.optimize import root_scalar
 
 plt.style.use("science")
 
 
-def E_uniaxial_stress(*, mu, kappa):
+def E_uniaxial_stress(*, mu, kappa, compressible=True):
     """
     Young's modulus (uniaxial stress condition).
     sigma_x != 0, sigma_y = sigma_z = 0
     kappa = bulk modulus (3D)
     mu = shear modulus (3D)
     """
-    return 9.0 * mu * kappa / (3.0 * kappa + mu)
+    if compressible:
+        return 9.0 * mu * kappa / (3.0 * kappa + mu)
+    else:
+        # Incompressible case: E is determined by shear response since volumetric response is infinitely stiff
+        return 3.0 * mu
 
 
 def E_uniaxial_strain(*, mu, kappa):
@@ -185,6 +190,11 @@ def pressure(
     compressible : bool, default=False
         Whether to use compressible formulation
     """
+    E_0 = E_uniaxial_stress(
+        mu=mu0, kappa=kappa0, compressible=compressible
+    )  # Base stiffness from uniaxial stress condition
+    gdim = 2 if geometry in ["2d", "2d_plane_stress", "2d_plane_strain"] else 3
+    p_0 = E_0 * (Delta / H) / gdim  # Base pressure from uniaxial stress condition
     if not compressible:  # Incompressible case
         if geometry == "2d":
             # Pure 2D incompressible pressure
@@ -192,7 +202,7 @@ def pressure(
             x_ = x / H
             delta_ = Delta / H
             R_ = R / H
-            return (3 / 2) * mu0 * delta_ * (R_**2 - x_**2)
+            return (3 / 2) * mu0 * delta_ * (R_**2 - x_**2) + p_0
         elif geometry == "2d_plane_stress":
             raise NotImplementedError("Plane stress formulation not implemented")
         elif geometry == "2d_plane_strain":
@@ -201,11 +211,11 @@ def pressure(
             x_ = x / H
             delta_ = Delta / H
             R_ = R / H
-            return (3 / 2) * mu0 * delta_ * (R_**2 - x_**2)
+            return (3 / 2) * mu0 * delta_ * (R_**2 - x_**2) + p_0
         elif geometry == "3d":
             # 3D incompressible pressure
             r = coord
-            return (3 * mu0 / 4) * (R**2 * Delta / H**3) * (1 - r**2 / R**2)
+            return (3 * mu0 / 4) * (R**2 * Delta / H**3) * (1 - r**2 / R**2) + p_0
         else:
             raise ValueError(f"Unknown geometry: {geometry}")
     else:  # Compressible case
@@ -219,7 +229,7 @@ def pressure(
             R_ = R / H
             eta = a_ * R_
             delta_ = Delta / H
-            return kappa0 * delta_ * (1 - np.cosh(eta * x_ / R_) / np.cosh(eta))
+            return kappa0 * delta_ * (1 - np.cosh(eta * x_ / R_) / np.cosh(eta)) + p_0
         elif geometry == "2d_plane_stress":
             raise NotImplementedError("Plane stress formulation not implemented")
         elif geometry == "2d_plane_strain":
@@ -230,7 +240,7 @@ def pressure(
             R_ = R / H
             eta = a_ * R_
             delta_ = Delta / H
-            return kappa0 * delta_ * (1 - np.cosh(eta * x_ / R_) / np.cosh(eta))
+            return kappa0 * delta_ * (1 - np.cosh(eta * x_ / R_) / np.cosh(eta)) + p_0
         elif geometry == "3d":
             # 3D compressible pressure
             r = coord
@@ -240,6 +250,7 @@ def pressure(
             delta_ = Delta / H
             return (
                 kappa0 * delta_ * (1 - jv(0, 1j * a_ * r_) / jv(0, 1j * a_ * R_)).real
+                + p_0
             )
         else:
             raise ValueError(f"Unknown geometry: {geometry}")
@@ -345,21 +356,24 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
     compressible : bool, default=False
         Whether to use compressible formulation
     """
+    E_0 = E_uniaxial_stress(
+        mu=mu0, kappa=kappa0, compressible=compressible
+    )  # Base stiffness from uniaxial stress condition
     if not compressible:  # Incompressible case
         if geometry == "2d":
             # Pure 2D incompressible equivalent modulus
             R_ = R / H
-            return mu0 * R_**2
+            return mu0 * R_**2 + E_0
         elif geometry == "2d_plane_stress":
             # 2D plane stress incompressible equivalent modulus
             raise NotImplementedError("Plane stress formulation not implemented")
         elif geometry == "2d_plane_strain":
             # 2D plane strain incompressible equivalent modulus
             R_ = R / H
-            return mu0 * R_**2
+            return mu0 * R_**2 + E_0
         elif geometry == "3d":
             # 3D incompressible equivalent modulus
-            return (3 / 8) * mu0 * (R / H) ** 2
+            return (3 / 8) * mu0 * (R / H) ** 2 + E_0
         else:
             raise ValueError(f"Unknown geometry: {geometry}")
     else:  # Compressible case
@@ -369,7 +383,7 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
             # 2D compressible equivalent modulus
             a_ = np.sqrt(3 * mu0 / (kappa0))
             R_ = R / H
-            return 2 * (kappa0 / 2) * (1 - (1 / (a_ * R_)) * np.tanh(a_ * R_))
+            return 2 * (kappa0 / 2) * (1 - (1 / (a_ * R_)) * np.tanh(a_ * R_)) + E_0
         elif geometry == "2d_plane_stress":
             # 2D plane stress compressible equivalent modulus
             raise NotImplementedError("Plane stress formulation not implemented")
@@ -377,9 +391,14 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
             # 3D compressible equivalent modulus
             a_ = np.sqrt(3 * mu0 / (kappa0))
             R_ = R / H
-            return -kappa0 * (jv(2, 1j * a_ * R_) / jv(0, 1j * a_ * R_)).real
+            return -kappa0 * (jv(2, 1j * a_ * R_) / jv(0, 1j * a_ * R_)).real + E_0
         else:
             raise ValueError(f"Unknown geometry: {geometry}")
+
+
+def uniaxial_stress_strain(xs, *, p_c, mu, dimension):
+    uniaxial_stress = p_c + (2 / dimension) * mu * xs
+    return uniaxial_stress
 
 
 def max_pressure(*, mu0, Delta, H, R, kappa0=None, geometry="2d", compressible=False):
@@ -403,19 +422,24 @@ def max_pressure(*, mu0, Delta, H, R, kappa0=None, geometry="2d", compressible=F
     compressible : bool, default=False
         Whether to use compressible formulation
     """
+    E_0 = E_uniaxial_stress(
+        mu=mu0, kappa=kappa0, compressible=compressible
+    )  # Base stiffness from uniaxial stress condition
+    gdim = 2 if geometry in ["2d", "2d_plane_stress", "2d_plane_strain"] else 3
+    p_0 = E_0 * (Delta / H) / gdim  # Base pressure from uniaxial stress condition
     if not compressible:  # Incompressible case
         if geometry == "2d":
             # 2D incompressible max pressure (at x=0)
             delta_ = Delta / H
             R_ = R / H
-            return (3 / 2) * mu0 * delta_ * R_**2
+            return (3 / 2) * mu0 * delta_ * R_**2 + p_0
         elif geometry == "2d_plane_stress":
             raise NotImplementedError("Plane stress formulation not implemented")
         elif geometry == "2d_plane_strain":
             # 2D plane strain incompressible max pressure (at x=0)
             delta_ = Delta / H
             R_ = R / H
-            return (3 / 2) * mu0 * delta_ * R_**2
+            return (3 / 2) * mu0 * delta_ * R_**2 + p_0
         elif geometry == "3d":
             # 3D incompressible max pressure (at r=0)
             return (3 * mu0 / 4) * (R**2 * Delta / H**3)
@@ -430,7 +454,7 @@ def max_pressure(*, mu0, Delta, H, R, kappa0=None, geometry="2d", compressible=F
             R_ = R / H
             delta_ = Delta / H
             eta_ = a_ * R_
-            return kappa0 * delta_ * (1 - 1 / np.cosh(eta_))
+            return kappa0 * delta_ * (1 - 1 / np.cosh(eta_)) + p_0
         elif geometry == "2d_plane_stress":
             raise NotImplementedError("Plane stress formulation not implemented")
         elif geometry == "2d_plane_strain":
@@ -439,15 +463,74 @@ def max_pressure(*, mu0, Delta, H, R, kappa0=None, geometry="2d", compressible=F
             R_ = R / H
             delta_ = Delta / H
             eta_ = a_ * R_
-            return kappa0 * delta_ * (1 - 1 / np.cosh(eta_))
+            return kappa0 * delta_ * (1 - 1 / np.cosh(eta_)) + p_0
         elif geometry == "3d":
             # 3D compressible max pressure (at r=0)
             a_ = np.sqrt(3 * mu0 / (kappa0))
             R_ = R / H
             delta_ = Delta / H
-            return kappa0 * delta_ * (1 - jv(0, 0) / jv(0, 1j * a_ * R_)).real
+            return kappa0 * delta_ * (1 - jv(0, 0) / jv(0, 1j * a_ * R_)).real + p_0
         else:
             raise ValueError(f"Unknown geometry: {geometry}")
+
+
+def critical_loading_analytical(
+    *, mu0, H, R, p_c, kappa0=None, geometry="3d", compressible=False
+):
+    """
+    Returns the critical displacement Delta such that p_max = p_c.
+
+    Parameters:
+    -----------
+    p_c : float
+        Target maximum pressure
+    ... (other parameters same as max_pressure)
+    """
+
+    # We calculate the pressure for a reference displacement Delta = 1.0
+    # and use the linear relationship: p_max = Slope * Delta
+    # Therefore: Delta_c = p_c / Slope
+
+    ref_delta = 1.0
+
+    # Calculate base stiffness (E_0) and base pressure (p_0) for Delta = 1.0
+    E_0 = E_uniaxial_stress(mu=mu0, kappa=kappa0, compressible=compressible)
+    gdim = 2 if geometry in ["2d", "2d_plane_stress", "2d_plane_strain"] else 3
+
+    # Base pressure slope (p_0 / Delta)
+    p0_slope = (E_0 / H) / gdim
+
+    R_ = R / H
+
+    if not compressible:
+        if geometry in ["2d", "2d_plane_strain"]:
+            # p_max = (3/2 * mu0 * R^2 / H^3 + p0_slope) * Delta
+            slope = (3 / 2) * mu0 * (R**2 / H**3) + p0_slope
+        elif geometry == "3d":
+            # Note: Your 3D incompressible code does not add p_0
+            slope = (3 * mu0 / 4) * (R**2 / H**3)
+        else:
+            raise ValueError(f"Unknown geometry: {geometry}")
+
+    else:  # Compressible case
+        if kappa0 is None:
+            raise ValueError("kappa0 must be provided when compressible=True")
+
+        a_ = np.sqrt(3 * mu0 / kappa0)
+        eta_ = a_ * R_
+
+        if geometry in ["2d", "2d_plane_strain"]:
+            # p_max = (kappa0/H * (1 - 1/cosh(eta)) + p0_slope) * Delta
+            slope = (kappa0 / H) * (1 - 1 / np.cosh(eta_)) + p0_slope
+        elif geometry == "3d":
+            # p_max = (kappa0/H * (1 - J0(0)/J0(i*a*R/H)) + p0_slope) * Delta
+            # J0(0) = 1.0
+            term = (1 - 1 / jv(0, 1j * a_ * R_)).real
+            slope = (kappa0 / H) * term + p0_slope
+        else:
+            raise ValueError(f"Unknown geometry: {geometry}")
+
+    return p_c / slope
 
 
 def max_shear_stress(

@@ -20,10 +20,14 @@ def run_aspect_ratio_study():
 
     # Vary H to get different aspect ratios
     # Aspect ratios will be: L/H = 1.0/H
-    L_values = [5.0, 10]  # Gives aspect ratios: 1, 2, 5, 10
+    L_values = [10]  # Gives aspect
+    k_values = [
+        1000.0,
+    ]  # [10.0, 20, 30, 50.0, 200.0, 500.0]  # Vary compressibility for 3D cases
     L_str = ",".join(map(str, L_values))
+    k_str = ",".join(map(str, k_values))
     load_max = 0.4
-    n_steps = 10
+    n_steps = 50
 
     print("=== Running Hydra Multirun Parametric Study ===")
     print(f"Fixed L = {L_values}")
@@ -49,6 +53,7 @@ def run_aspect_ratio_study():
         f"geometry.H={H}",
         f"geometry.h_div={h_div}",
         f"geometry.geometric_dimension={gdim}",
+        f"model.kappa={k_str}",
         f"load_max={load_max}",
         f"n_steps={n_steps}",
         "output_name=nonlinear_aspect_study",
