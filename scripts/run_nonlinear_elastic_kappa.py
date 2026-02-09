@@ -12,42 +12,56 @@ from pathlib import Path
 
 def run_aspect_ratio_study():
     """Run parametric study varying aspect ratios."""
+    n_cores = 1
 
     # Fixed parameters
-    L = 1.0  # Keep L constant
-    h_div = 4  # Elements through thickness (small for faster runs)
+    H = 1.0  # Keep H constant
+    h_div = 6  # Elements through thickness (small for faster runs)
     gdim = 2  # 2D analysis
 
     # Vary H to get different aspect ratios
     # Aspect ratios will be: L/H = 1.0/H
-    H_values = [1.0, 0.5, 0.2, 0.1]  # Gives aspect ratios: 1, 2, 5, 10
-    H_str = ",".join(map(str, H_values))
+    # L_values = [10]  #
+    L_values = [2, 3, 4, 5, 7.5, 10, 15]  # Gives aspect
+    # k_values = [20.0, 30.0, 50.0, 200.0, 500.0]  # compressibility for 3D cases
+    k_values = [500]
+    L_str = ",".join(map(str, L_values))
+    k_str = ",".join(map(str, k_values))
+    load_max = 0.5
+    n_steps = 100
+    # number of cores for parallel runs (set to 1 for serial runs)
 
     print("=== Running Hydra Multirun Parametric Study ===")
-    print(f"Fixed L = {L}")
-    print(f"H values = {H_values}")
-    print(f"Aspect ratios = {[L / H for H in H_values]}")
+    print(f"Fixed L = {L_values}")
+    print(f"H values = {H}")
+    print(f"Aspect ratios = {[L / H for L in L_values]}")
     print(f"Elements through thickness = {h_div}")
     print(f"Geometric dimension = {gdim}D")
 
     # Build command
     script_dir = Path(__file__).parent.parent
-    solver_script = script_dir / "solvers" / "poker_chip_linear.py"
+    solver_script = script_dir / "solvers" / "poker_chip.py"
     config_dir = script_dir / "config"
 
     cmd = [
+        "mpiexec",
+        "-np",
+        str(n_cores),
         sys.executable,
         str(solver_script),
         "--config-dir",
         str(config_dir),
         "--config-name",
-        "config_linear",
+        "config_elastic_nonlinear.yaml",
         "--multirun",
-        f"geometry.H={H_str}",
-        f"geometry.L={L}",
+        f"geometry.L={L_str}",
+        f"geometry.H={H}",
         f"geometry.h_div={h_div}",
         f"geometry.geometric_dimension={gdim}",
-        "output_name=aspect_study",
+        f"model.kappa={k_str}",
+        f"load_max={load_max}",
+        f"n_steps={n_steps}",
+        "output_name=nonlinear_aspect_study",
     ]
 
     print("\\nRunning command:")

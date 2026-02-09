@@ -487,8 +487,8 @@ def plot_stress_strain_curve(
     plt.ylabel(r"$F/\mu S$")
 
     # plt.title("Stress vs. Strain Comparison")
-    plt.xlim(0, 0.5)  # all_runs[0]["average_strain"][-1])
-    plt.ylim(0, 4.0)
+    plt.xlim(0, all_runs[0]["average_strain"][-1])
+    plt.ylim(0, 3.0)
     # plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.title(
         rf"FEM {('2d' if all_runs[0]['parameters']['geometry']['geometric_dimension'] else '3d')} "
