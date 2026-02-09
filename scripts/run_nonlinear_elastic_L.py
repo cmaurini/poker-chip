@@ -24,7 +24,7 @@ def run_aspect_ratio_study():
     L_values = [10]  #
     # L_values = [2, 3, 4, 5, 7.5, 10, 15]  # Gives aspect
     k_values = [20.0, 30.0, 50.0, 200.0, 500.0]  # compressibility for 3D cases
-    k_values = [500]
+    # k_values = [500]
     L_str = ",".join(map(str, L_values))
     k_str = ",".join(map(str, k_values))
     load_max = 0.5
