@@ -24,10 +24,10 @@ def mesh_bar(L, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD, verbos
         model.add("Rectangle")
         model.setCurrent("Rectangle")
 
-        p0 = model.geo.addPoint(-L / 2, -H / 2, 0, lc, tag=0)
-        p1 = model.geo.addPoint(L / 2, -H / 2, 0, lc, tag=1)
-        p2 = model.geo.addPoint(L / 2, H / 2, 0.0, lc, tag=2)
-        p3 = model.geo.addPoint(-L / 2, H / 2, 0, lc, tag=3)
+        p0 = model.geo.addPoint(-L, -H, 0, lc, tag=0)
+        p1 = model.geo.addPoint(L, -H, 0, lc, tag=1)
+        p2 = model.geo.addPoint(L, H, 0.0, lc, tag=2)
+        p3 = model.geo.addPoint(-L, H, 0, lc, tag=3)
 
         bottom = model.geo.addLine(p0, p1, tag=12)
         right = model.geo.addLine(p1, p2, tag=13)
@@ -59,6 +59,61 @@ def mesh_bar(L, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD, verbos
         model.mesh.generate(tdim)
 
         # Optional: Write msh file
+        if msh_file is not None:
+            gmsh.write(msh_file)
+
+    if comm.rank == 0:
+        model_out = gmsh.model
+    else:
+        model_out = 0
+
+    return model_out, tdim, tag_names
+
+
+def mesh_bar_quarter(
+    L, H, lc, tdim, order=1, msh_file=None, comm=MPI.COMM_WORLD, verbose=True
+):
+    facet_tag_names = {"bottom": 12, "right": 13, "top": 14, "left": 15}
+    tag_names = {"facets": facet_tag_names}
+    import gmsh
+
+    if comm.rank == 0:
+        gmsh.initialize()
+        if not verbose:
+            gmsh.option.setNumber("General.Verbosity", 0)
+        gmsh.option.setNumber("General.Terminal", 1)
+        gmsh.option.setNumber("Mesh.Algorithm", 5)
+        gmsh.model.mesh.optimize("Netgen")
+        model = gmsh.model()
+        model.add("QuarterRectangle")
+        model.setCurrent("QuarterRectangle")
+
+        # Quarter rectangle: from (0,0) to (L/2, H/2)
+        p0 = model.geo.addPoint(0, 0, 0, lc, tag=0)
+        p1 = model.geo.addPoint(L, 0, 0, lc, tag=1)
+        p2 = model.geo.addPoint(L, H, 0, lc, tag=2)
+        p3 = model.geo.addPoint(0, H, 0, lc, tag=3)
+
+        bottom = model.geo.addLine(p0, p1, tag=12)
+        right = model.geo.addLine(p1, p2, tag=13)
+        top = model.geo.addLine(p2, p3, tag=14)
+        left = model.geo.addLine(p3, p0, tag=15)
+
+        cloop1 = model.geo.addCurveLoop([bottom, right, top, left])
+        model.geo.addPlaneSurface([cloop1])
+        model.geo.synchronize()
+        surface_entities = [model[1] for model in model.getEntities(tdim)]
+        model.addPhysicalGroup(tdim, surface_entities, tag=22)
+        model.setPhysicalName(tdim, 22, "Quarter Rectangle surface")
+
+        gmsh.model.mesh.setOrder(order)
+
+        for k, v in facet_tag_names.items():
+            gmsh.model.addPhysicalGroup(tdim - 1, [v], tag=v)
+            gmsh.model.setPhysicalName(tdim - 1, v, k)
+
+        model.mesh.generate(tdim)
+
         if msh_file is not None:
             gmsh.write(msh_file)
 

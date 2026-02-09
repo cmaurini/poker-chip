@@ -1,12 +1,8 @@
 # Poker Chip Phase-Field Fracture Simulation Library
 
-A standalone Python library for phase-field fracture simulations of poker chips and other geometries using FEniCSx (dolfinx) and alternating minimization algorithms.
+Phase-field fracture simulations of poker chips and other geometries using FEniCSx (dolfinx) and alternating minimization algorithms.
 
-## To run
-
-```
-python run_poker_chip.py --gdim 2 --nstep 30
-```
+`
 
 ### Installation
 
@@ -14,31 +10,10 @@ python run_poker_chip.py --gdim 2 --nstep 30
 ```bash
 conda env create -f environment.yml
 conda activate poker-chip
-python run_poker_chip.py --gdim 2 --nstep 30
 ```
 
-**Option 2: Using pip**
-```bash
-pip install -r requirements.txt
-python run_poker_chip.py --gdim 2 --nstep 30
-```
 
-If you encounter `ModuleNotFoundError: No module named 'gmsh'`, install it explicitly:
-```bash
-pip install gmsh
-```
 
-## Dependencies & Version Compatibility
-
-- **dolfinx >= 0.10**: Modern FEniCSx library with improved API
-- **petsc4py**: PETSc parallel solvers interface
-- **mpi4py >= 3.0**: Message Passing Interface support
-- **Python >= 3.9**
-
-The library has been updated to work with dolfinx 0.10 and later. Key dependencies are:
-- numpy, scipy for numerical computing
-- matplotlib, scienceplots for visualization
-- pyyaml for configuration
 
 ## Solved Problem
 

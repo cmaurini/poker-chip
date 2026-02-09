@@ -19,27 +19,6 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 
 
-def get_run_slug(model, geometry):
-    elastic = int(model.get("elastic", 0))
-    gdim = int(geometry.get("geometric_dimension", 3))
-    H = float(geometry.get("H", 0.2))
-    L = float(geometry.get("L", 1.0))
-    ell = float(model.get("ell", 0.01))
-
-    if elastic == 0:
-        e_c = float(model.get("e_c", 0.2))
-        w_1 = float(model.get("w_1", 1.0))
-        gamma_mu = float(model.get("gamma_mu", 2.0))
-        return f"{gdim:d}d-ec{e_c:3.2f}_ell{ell:3.3f}_w{w_1:2.3f}_gmu{gamma_mu:3.2f}_H{H:3.2f}_L{L}"
-    else:
-        kappa = float(model.get("kappa", 500.0))
-        mu = float(model.get("mu", 0.59))
-        return f"{gdim:d}d-elastic_H{H:3.2f}_L{L}_ell{ell:3.2f}_kappa_{kappa:3.1f}_mu_{mu:3.2f}"
-
-
-if not OmegaConf.has_resolver("get_run_slug"):
-    OmegaConf.register_new_resolver("get_run_slug", get_run_slug)
-
 petsc4py.init(sys.argv)
 
 from dolfinx.io import XDMFFile
@@ -62,11 +41,11 @@ from solvers import (
     assemble_scalar_reduce,
     evaluate_function,
 )
-from mesh import mesh_bar, mesh_chip, box_mesh, mesh_chip_eight
+from mesh import mesh_bar, mesh_chip, box_mesh, mesh_chip_eight, mesh_bar_quarter
 
 from reference import formulas_paper as formulas
-from reference import gent_lindley_data as gl_data
-from reference.GL import GentLindleyData
+# from reference import gent_lindley_data as gl_data
+# from reference.old.GL import GentLindleyData
 
 # Configure plotting
 plt.rcParams.update({"text.usetex": True})
@@ -78,18 +57,40 @@ comm = MPI.COMM_WORLD
 config_path = str(Path(__file__).parent.parent / "config")
 
 
+def get_run_slug(model, geometry):
+    elastic = int(model.get("elastic", 0))
+    gdim = int(geometry.get("geometric_dimension", 3))
+    H = float(geometry.get("H", 0.2))
+    L = float(geometry.get("L", 1.0))
+    ell = float(model.get("ell", 0.01))
+
+    if elastic == 0:
+        e_c = float(model.get("e_c", 0.2))
+        w_1 = float(model.get("w_1", 1.0))
+        gamma_mu = float(model.get("gamma_mu", 2.0))
+        return f"{gdim:d}d-ec{e_c:3.2f}_ell{ell:3.3f}_w{w_1:2.3f}_gmu{gamma_mu:3.2f}_H{H:3.2f}_L{L}"
+    else:
+        kappa = float(model.get("kappa", 500.0))
+        mu = float(model.get("mu", 0.59))
+        return f"{gdim:d}d-elastic_H{H:3.2f}_L{L}_ell{ell:3.2f}_kappa_{kappa:3.1f}_mu_{mu:3.2f}"
+
+
+if not OmegaConf.has_resolver("get_run_slug"):
+    OmegaConf.register_new_resolver("get_run_slug", get_run_slug)
+
+
 @hydra.main(version_base=None, config_path=config_path, config_name="config")
 def main(cfg: DictConfig):
     parameters = cfg
 
     # Material parameters
-    mu = parameters.model.get("mu", 0.59)
-    k = parameters.model.get("kappa", 500.0)
-    ell = parameters.model.get("ell", 0.01)
-    e_c = parameters.model.get("e_c", 0.2)
-    p_cav = parameters.model.get("p_cav", 1.475)
-    w_1 = parameters.model.get("w_1", 1.0)
-    gamma_mu = parameters.model.get("gamma_mu", 2.0)
+    mu = float(parameters.model.get("mu", 0.59))
+    k = float(parameters.model.get("kappa", 500.0))
+    ell = float(parameters.model.get("ell", 0.01))
+    e_c = float(parameters.model.get("e_c", 0.2))
+    p_cav = float(parameters.model.get("p_cav", 1.475))
+    w_1 = float(parameters.model.get("w_1", 1.0))
+    gamma_mu = float(parameters.model.get("gamma_mu", 2.0))
 
     # Derived material parameters
     tau_c = float(np.sqrt(2 * w_1 * mu / gamma_mu))
@@ -108,8 +109,8 @@ def main(cfg: DictConfig):
     elastic = parameters.model.get("elastic", 0)
     gdim = parameters.geometry.get("geometric_dimension", 3)
     model_dimension = gdim
-    L = parameters.geometry.get("L", 1.0)
-    H = parameters.geometry.get("H", 0.1)
+    L = float(parameters.geometry.get("L", 1.0))
+    H = float(parameters.geometry.get("H", 0.1))
     h_div = parameters.geometry.get("h_div", 3.0)
     degree_q = parameters.fem.get("degree_q", 2)
     degree_u = parameters.fem.get("degree_u", 0)
@@ -124,7 +125,7 @@ def main(cfg: DictConfig):
 
     # Additional parametres
     output_name = parameters.get("output_name", "poker")
-    load_max = parameters.get("load_max", 2.0)
+    load_max = float(parameters.get("load_max", 2.0))
     n_steps = parameters.get("n_steps", 100)
     unload = parameters.get("unload", 0)
     sliding = parameters.get("sliding", 1)
@@ -142,14 +143,14 @@ def main(cfg: DictConfig):
         loads = np.concatenate((loads, loads[::-1][1:]))
 
     if gdim == 2:
-        if sliding == 0:
-            gmsh_model, tdim, tag_names = mesh_bar(
-                2 * L, 2 * H, lc, gdim, verbose=False
+        if sym:
+            gmsh_model, tdim, tag_names = mesh_bar_quarter(
+                L, H, lc, gdim, verbose=False
             )
+        elif sliding == 0:
+            gmsh_model, tdim, tag_names = mesh_bar(L, H, lc, gdim, verbose=False)
         elif sliding == 1:
-            gmsh_model, tdim, tag_names = mesh_bar(
-                2 * L, 2 * H, lc, gdim, verbose=False
-            )
+            gmsh_model, tdim, tag_names = mesh_bar(L, H, lc, gdim, verbose=False)
     elif gdim == 3:
         if sym:
             gmsh_model, tdim, tag_names = mesh_chip_eight(L, H, lc, gdim)
@@ -337,7 +338,24 @@ def main(cfg: DictConfig):
         V_alpha, tdim - 1, np.array(bottom_facets)
     )
 
-    if gdim == 2 and sliding == 1:
+    if gdim == 2 and sym:
+        # Symmetry boundary conditions for quarter domain
+        dof_u_left = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["left"])
+        )
+        dof_u_bottom_normal = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(1), tdim - 1, facet_tags.find(tag_names["facets"]["bottom"])
+        )
+        bcs_u = [
+            dolfinx.fem.dirichletbc(
+                0.0, dof_u_bottom_normal, V_u.sub(1)
+            ),  # bottom: u_y = 0 (blocked)
+            dolfinx.fem.dirichletbc(u_top, dofs_u_top),  # top: prescribed displacement
+            dolfinx.fem.dirichletbc(
+                0.0, dof_u_left, V_u.sub(0)
+            ),  # left: u_x = 0 (symmetry)
+        ]
+    elif gdim == 2 and sliding == 1:
         bcs_u = [
             dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom),
             dolfinx.fem.dirichletbc(u_top, dofs_u_top),
@@ -571,6 +589,8 @@ def main(cfg: DictConfig):
         "average_strain": [],
         "x_points": [],
         "y_points": [],
+        "parameters": OmegaConf.to_container(parameters, resolve=True),
+        "run_slug": get_run_slug(parameters.model, parameters.geometry),
     }
 
     eps_nl_expr = dolfinx.fem.Expression(

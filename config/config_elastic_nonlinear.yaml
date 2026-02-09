@@ -6,7 +6,7 @@ defaults:
 hydra:
   run:
     # Simplified output directory with key parameters
-    dir: results/elastic_nl/${output_name}/L${geometry.L}_H${geometry.H}_hdiv${geometry.h_div}/${now:%Y%m%d_%H%M%S}
+    dir: results/elastic_nl/${output_name}/${now:%Y%m%d_%H%M%S}
   sweep:
     # Clean multirun directory structure
     dir: results/elastic_nl/${output_name}/multirun_${now:%Y%m%d_%H%M%S}

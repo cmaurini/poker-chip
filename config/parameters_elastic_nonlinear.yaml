@@ -3,7 +3,7 @@ model:
   kappa: 100.0
   ell: 1.0
   e_c: 0.2
-  p_cav: 1.0
+  p_cav: 2.5
   w_1: 1.0
   gamma_mu: 2.0
   nonlinear_elastic: 1

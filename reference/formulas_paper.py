@@ -17,7 +17,7 @@ from scipy.optimize import minimize_scalar
 try:
     from . import gent_lindley_data as gl_data
 except ImportError:
-    import gent_lindley_data as gl_data
+    import reference.gent_lindley_data as gl_data
 from scipy.optimize import root_scalar
 
 plt.style.use("science")
@@ -401,6 +401,11 @@ def uniaxial_stress_strain(xs, *, p_c, mu, dimension):
     return uniaxial_stress
 
 
+def uniaxial_elastic_energy(xs, *, p_c, mu, dimension):
+    uniaxial_stress = p_c * xs + (2 / dimension) * mu * xs**2 / 2
+    return uniaxial_stress
+
+
 def max_pressure(*, mu0, Delta, H, R, kappa0=None, geometry="2d", compressible=False):
     """
     Unified maximum pressure function for 2D/3D, compressible/incompressible cases
@@ -508,7 +513,7 @@ def critical_loading_analytical(
             slope = (3 / 2) * mu0 * (R**2 / H**3) + p0_slope
         elif geometry == "3d":
             # Note: Your 3D incompressible code does not add p_0
-            slope = (3 * mu0 / 4) * (R**2 / H**3)
+            slope = (3 * mu0 / 4) * (R**2 / H**3) + p0_slope
         else:
             raise ValueError(f"Unknown geometry: {geometry}")
 

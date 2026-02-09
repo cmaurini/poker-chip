@@ -5,31 +5,19 @@ from scipy.optimize import root_scalar
 import numpy as np
 import os
 
-# Try importing your local references, otherwise warn or mock if needed
-try:
-    from reference.formulas_paper import (
-        equivalent_modulus,
-        max_pressure,
-        uniaxial_stress_strain,
-        critical_loading_analytical,
-    )
-except ImportError:
-    import sys
-    from pathlib import Path
+# --- Imports from local modules ---
+import sys
+from pathlib import Path
 
-    # Attempt to find the path relative to this file
+if str(Path(__file__).parent.parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    try:
-        from reference.formulas_paper import (
-            equivalent_modulus,
-            max_pressure,
-            uniaxial_stress_strain,
-            critical_loading_analytical,
-        )
-    except ImportError:
-        print(
-            "Warning: Could not import 'equivalent_modulus' or 'max_pressure'. Plotting will fail."
-        )
+
+from reference.formulas_paper import (
+    equivalent_modulus,
+    max_pressure,
+    uniaxial_stress_strain,
+    critical_loading_analytical,
+)
 
 
 class GentLindleyData:
@@ -38,7 +26,10 @@ class GentLindleyData:
     """
 
     CONVERSION_FACTOR = 0.0980665
-    ASPECT_RATIO_GL = 2.0 / 0.19
+    L = 2.0
+    H = 0.19
+    ASPECT_RATIO_GL = L / H
+    mu_GL = 0.59  # MPa, fitted value from Gent and Lindley data E=18kg/cm^2, mu=6kg/cm^2=0.59MPa
     IDX_BREAK = 50  # End of Branch I
     IDX_BREAK2 = 64  # End of Branch II
 

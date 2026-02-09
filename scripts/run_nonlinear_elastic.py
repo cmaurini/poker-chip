@@ -12,22 +12,24 @@ from pathlib import Path
 
 def run_aspect_ratio_study():
     """Run parametric study varying aspect ratios."""
+    n_cores = 1
 
     # Fixed parameters
     H = 1.0  # Keep H constant
-    h_div = 4  # Elements through thickness (small for faster runs)
-    gdim = 3  # 2D analysis
+    h_div = 6  # Elements through thickness (small for faster runs)
+    gdim = 2  # 2D analysis
 
     # Vary H to get different aspect ratios
     # Aspect ratios will be: L/H = 1.0/H
-    L_values = [10]  # Gives aspect
-    k_values = [
-        1000.0,
-    ]  # [10.0, 20, 30, 50.0, 200.0, 500.0]  # Vary compressibility for 3D cases
+    # L_values = [10]  #
+    L_values = [2, 3, 4, 5, 7.5, 10, 15]  # Gives aspect
+    # k_values = [20.0, 30.0, 50.0, 200.0, 500.0]  # compressibility for 3D cases
+    k_values = [500]
     L_str = ",".join(map(str, L_values))
     k_str = ",".join(map(str, k_values))
-    load_max = 0.4
-    n_steps = 50
+    load_max = 0.5
+    n_steps = 100
+    # number of cores for parallel runs (set to 1 for serial runs)
 
     print("=== Running Hydra Multirun Parametric Study ===")
     print(f"Fixed L = {L_values}")
@@ -42,6 +44,9 @@ def run_aspect_ratio_study():
     config_dir = script_dir / "config"
 
     cmd = [
+        "mpiexec",
+        "-np",
+        str(n_cores),
         sys.executable,
         str(solver_script),
         "--config-dir",
