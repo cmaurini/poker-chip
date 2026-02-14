@@ -47,10 +47,6 @@ _script_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(_script_dir))
 
 from reference import formulas_paper
-from reference.formulas_paper import (
-    plot_equivalent_modulus_comparison,
-    plot_equivalent_modulus_vs_aspect_ratio,
-)
 
 try:
     from reference import gent_lindley_data as gl_data
@@ -124,10 +120,12 @@ def collect_results_from_multirun(multirun_dir: Path) -> List[Dict]:
     return all_runs
 
 
-def create_enhanced_equivalent_modulus_plot(
+def plot_equivalent_modulus(
     all_runs: List[Dict], output_dir: Path, mu: float = 1.0, kappa: float = 500.0
 ):
     """Create equivalent modulus plot using reference function and overlay FEM data"""
+    # infer geometric dimension from first run (assumes all runs have same gdim)
+    gdim = all_runs[0]["parameters"]["geometry"]["geometric_dimension"]
 
     # Extract FEM data for overlay
     aspect_ratios = np.array([run["L"] / run["H"] for run in all_runs])
@@ -141,12 +139,12 @@ def create_enhanced_equivalent_modulus_plot(
     )
 
     # Calculate Young's modulus E from mu and kappa
-    E_plane_strain = formulas_paper.E_plane_strain(mu=mu, kappa=kappa)
+    E_2d = formulas_paper.E_2d(mu=mu, kappa=kappa)
     E_uniaxial_stress = formulas_paper.E_uniaxial_stress(mu=mu, kappa=kappa)
     equivalent_stiffness_normalized = equivalent_stiffness / E_uniaxial_stress
 
     # Create a new plot with FEM data overlay on top of the analytical results
-    aspect_ratios_theory = np.logspace(-1, np.log10(500), 150)
+    aspect_ratios_theory = np.logspace(-1, np.log10(100), 150)
 
     plt.figure(figsize=(10, 6))
 
@@ -173,18 +171,17 @@ def create_enhanced_equivalent_modulus_plot(
     kappa_mu_ratios = np.sort(kappa_mu_ratios)
     colors = plt.cm.viridis(np.linspace(0.9, 0.2, len(kappa_mu_ratios)))
 
-    plt.loglog(
-        aspect_ratios_theory,
-        np.ones_like(aspect_ratios_theory),
-        color="gray",
-        linewidth=1.5,
-        linestyle="--",
-        label=f"Uniaxial",
-    )
-
     for i, kappa_mu_ratio in enumerate(kappa_mu_ratios):
         mu = 1
         kappa_val = kappa_mu_ratio * mu
+        E_uniaxial_strain = formulas.E_uniaxial_strain(
+            mu=mu, kappa=kappa_val, compressible=True, gdim=gdim
+        )
+        E_uniaxial_stress = formulas.E_uniaxial_stress(
+            mu=mu, kappa=kappa_val, compressible=True
+        )
+        E_2d = formulas.E_2d(mu=mu, kappa=kappa_val, compressible=True)
+        E_scaling = E_uniaxial_stress
         Eeq_2d_comp_ar = np.array(
             [
                 formulas_paper.equivalent_modulus(
@@ -192,17 +189,22 @@ def create_enhanced_equivalent_modulus_plot(
                     kappa0=kappa_val,
                     H=H_base,
                     R=ar * H_base,
-                    geometry="2d",
+                    geometry=("2d" if gdim == 2 else "3d"),
                     compressible=True,
                 )
                 for ar in aspect_ratios_theory
             ]
         )
-        E_uniaxial_strain = formulas.E_uniaxial_strain(mu=mu, kappa=kappa_val)
-        E_uniaxial_stress = formulas.E_uniaxial_stress(mu=mu, kappa=kappa_val)
-        E_plane_strain = formulas.E_plane_strain(mu=mu, kappa=kappa_val)
-        E_2d_pure = 4.0 * kappa_val * mu / (kappa_val + mu)
-        E_scaling = E_uniaxial_stress
+        # plt.axhline(
+        #    y=4.0
+        #    / 3.0
+        #    * E_uniaxial_strain
+        #    / E_uniaxial_stress,  # E_2d / E_uniaxial_stress,
+        #    color=colors[i],
+        #    linewidth=1.0,
+        #    linestyle="--",
+        #    alpha=0.5,
+        # )
 
         plt.loglog(
             aspect_ratios_theory,
@@ -213,71 +215,23 @@ def create_enhanced_equivalent_modulus_plot(
         )
 
         # Gent-Lindley paper analytical formula
-        E_0 = E_2d_pure  # E_plane_strain
-        Einf = E_uniaxial_strain  # kappa_val + (4 / 3) * mu
-        Eeq_2d_gent_paper_an_ratio = 1 + 1 / 4 * (
-            aspect_ratios_theory**2
-        )  # the factor is mu/E_2d = 1/4 for pure 2d
-        Eeq_2d_gent_paper_an = E_2d_pure * Eeq_2d_gent_paper_an_ratio
-        Eeq_2d_gent_paper_an_comp = (Einf * Eeq_2d_gent_paper_an) / (
-            Eeq_2d_gent_paper_an + Einf
-        )
+        # Einf = E_uniaxial_strain  # kappa_val + (4 / 3) * mu
+        # Eeq_2d_gent_paper_an_ratio = 1 + 1 / 4 * (
+        #    aspect_ratios_theory**2
+        # )  # the factor is mu/E_2d = 1/4 for pure 2d
+        # Eeq_2d_gent_paper_an = E_2d * Eeq_2d_gent_paper_an_ratio
+        # Eeq_2d_gent_paper_an_comp = (Einf * Eeq_2d_gent_paper_an) / (
+        #    Eeq_2d_gent_paper_an + Einf
+        # )
 
-        plt.loglog(
-            aspect_ratios_theory,
-            Eeq_2d_gent_paper_an_comp / E_scaling,
-            color=colors[i],
-            linewidth=2.5,
-            linestyle=":",
-            label=f"GL, $\\kappa/\\mu=${kappa_mu_ratio:.1f}",
-        )
-
-    # Add incompressible limit
-    Eeq_2d_inc_ar = formulas_paper.equivalent_modulus(
-        mu0=mu,
-        H=H_base,
-        R=aspect_ratios_theory * H_base,
-        geometry="2d",
-        compressible=False,
-    )
-
-    E_incompressible = 3 * mu_ref
-    plt.loglog(
-        aspect_ratios_theory,
-        Eeq_2d_inc_ar / E_scaling,
-        color="black",
-        linewidth=2.5,
-        linestyle="--",
-        label="2D incompressible",
-    )
-
-    # Add Gent-Lindley experimental data point
-    try:
-        GL_aspect_ratio = gl_data.R_GL / gl_data.H_GL
-        initial_points = 5
-        GL_Eeq_exp = np.polyfit(
-            gl_data.GL_fig2_x[:initial_points],
-            gl_data.GL_fig2_y_MPa[:initial_points],
-            1,
-        )[0]
-        GL_E_material = 3 * gl_data.mu_GL
-        GL_Eeq_normalized = GL_Eeq_exp / (
-            E_scaling * (GL_E_material / E_uniaxial_stress)
-        )
-
-        plt.scatter(
-            GL_aspect_ratio,
-            GL_Eeq_normalized,
-            marker="*",
-            s=150,
-            color="red",
-            edgecolor="black",
-            linewidth=1,
-            label="Gent-Lindley exp.",
-            zorder=6,
-        )
-    except:
-        pass  # Skip GL data if not available
+        # plt.loglog(
+        #    aspect_ratios_theory,
+        #    Eeq_2d_gent_paper_an_comp / E_scaling,
+        #    color=colors[i],
+        #    linewidth=2.5,
+        #    linestyle=":",
+        #    label=f"GL, $\\kappa/\\mu=${kappa_mu_ratio:.1f}",
+        # )
 
     # Overlay FEM results
     plt.loglog(
@@ -292,16 +246,77 @@ def create_enhanced_equivalent_modulus_plot(
         zorder=5,
     )
 
+    # Add incompressible limit
+    Eeq_2d_inc_ar = formulas_paper.equivalent_modulus(
+        mu0=mu,
+        H=H_base,
+        R=aspect_ratios_theory * H_base,
+        geometry="2d" if gdim == 2 else "3d",
+        compressible=False,
+    )
+
+    plt.loglog(
+        aspect_ratios_theory,
+        Eeq_2d_inc_ar / E_scaling,
+        color="black",
+        linewidth=2.5,
+        linestyle="--",
+        label="2D incompressible",
+    )
+    if gdim == 2:
+        print(
+            f"2D plane strain modulus: E_2d = {E_2d:.3f}, E_uniaxial_stress = {E_uniaxial_stress:.3f}"
+        )
+        plt.axhline(
+            y=4.0 / 3.0,  # E_2d / E_uniaxial_stress,
+            color="gray",
+            linewidth=1.5,
+            linestyle="--",
+            label=r"$4/3$",
+        )
+    else:
+        plt.axhline(
+            y=1.0,
+            color="gray",
+            linewidth=1.5,
+            linestyle="--",
+        )
+    # Add Gent-Lindley experimental data point
+
+    GL_aspect_ratio = gl_data.R_GL / gl_data.H_GL
+    initial_points = 5
+    GL_Eeq_exp = np.polyfit(
+        gl_data.GL_fig2_x[:initial_points],
+        gl_data.GL_fig2_y_MPa[:initial_points],
+        1,
+    )[0]
+    GL_E_material = 3 * gl_data.mu_GL
+    GL_Eeq_normalized = GL_Eeq_exp / (E_scaling * (GL_E_material / E_uniaxial_stress))
+    if gdim == 3:
+        plt.scatter(
+            GL_aspect_ratio,
+            GL_Eeq_normalized,
+            marker="*",
+            s=150,
+            color="red",
+            edgecolor="black",
+            linewidth=1,
+            label="Gent-Lindley exp.",
+            zorder=6,
+        )
+
     plt.xlabel(r"$R/H$", fontsize=14)
     plt.ylabel(r"$E_{eq}/E$", fontsize=14)
-    plt.title("2D Equivalent Modulus vs Aspect Ratio (with FEM overlay)", fontsize=16)
-    plt.legend(fontsize=12, bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.xlim(0.1, 100)
+    plt.ylim(1.0, 500)
+
+    plt.title("Equivalent Modulus", fontsize=16)
+    # plt.legend(fontsize=12, bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.legend(fontsize=12, loc="upper left")  # Place legend inside plot
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
 
-    plt.savefig(
-        output_dir / "enhanced_equivalent_stiffness_comparison.pdf", bbox_inches="tight"
-    )
+    plt.savefig(output_dir / f"equivalent_stiffness_{gdim}d.pdf", bbox_inches="tight")
     plt.close()
 
     print(f"Enhanced equivalent stiffness plot saved to {output_dir}")
@@ -899,7 +914,7 @@ def main():
     print(f"Geometric dimension: {args.gdim}D")
 
     # Create plots
-    create_enhanced_equivalent_modulus_plot(all_runs, output_dir, args.mu, args.kappa)
+    plot_equivalent_modulus(all_runs, output_dir, args.mu, args.kappa)
     plot_max_pressure_comparison(all_runs, output_dir, args.mu, args.kappa, args.gdim)
 
     # Create analytical plots using existing functions

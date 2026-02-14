@@ -8,25 +8,30 @@ This script demonstrates how to use Hydra's multirun feature to sweep over param
 import subprocess
 import sys
 from pathlib import Path
+import numpy as np
 
 
 def run_aspect_ratio_study():
     """Run parametric study varying aspect ratios."""
 
     # Fixed parameters
-    L = 1.0  # Keep L constant
+    H = 1.0  # Keep H constant
     h_div = 4  # Elements through thickness (small for faster runs)
-    gdim = 2  # 2D analysis
+    gdim = 3  # 2D analysis
 
     # Vary H to get different aspect ratios
     # Aspect ratios will be: L/H = 1.0/H
-    H_values = [1.0, 0.5, 0.2, 0.1]  # Gives aspect ratios: 1, 2, 5, 10
-    H_str = ",".join(map(str, H_values))
+    n = 10
+    L_values = np.logspace(
+        np.log10(1.0), np.log10(20), n
+    )  # Gives aspect ratios: 1, 2, 5, 10
+    L_str = ",".join(f"{L:.3f}" for L in L_values)
+    print("L_str:", L_str)
 
     print("=== Running Hydra Multirun Parametric Study ===")
-    print(f"Fixed L = {L}")
-    print(f"H values = {H_values}")
-    print(f"Aspect ratios = {[L / H for H in H_values]}")
+    print(f"Fixed H = {H}")
+    print(f"H values = {L_values}")
+    print(f"Aspect ratios = {[L / H for L in L_values]}")
     print(f"Elements through thickness = {h_div}")
     print(f"Geometric dimension = {gdim}D")
 
@@ -43,8 +48,8 @@ def run_aspect_ratio_study():
         "--config-name",
         "config_linear",
         "--multirun",
-        f"geometry.H={H_str}",
-        f"geometry.L={L}",
+        f"geometry.H={H}",
+        f"geometry.L={L_str}",
         f"geometry.h_div={h_div}",
         f"geometry.geometric_dimension={gdim}",
         "output_name=aspect_study",

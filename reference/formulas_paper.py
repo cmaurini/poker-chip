@@ -37,24 +37,51 @@ def E_uniaxial_stress(*, mu, kappa, compressible=True):
         return 3.0 * mu
 
 
-def E_uniaxial_strain(*, mu, kappa):
+def E_uniaxial_strain(*, mu, kappa, compressible=True, gdim=2):
     """
     Uniaxial strain (constrained / P-wave modulus).
     epsilon_y = epsilon_z = 0
-    kappa = bulk modulus (3D)
+    kappa = bulk modulus (3D if gdim 3, 2D if gdim 2s)
     mu = shear modulus (3D)
     """
-    return kappa + (4.0 / 3.0) * mu
+    if compressible:
+        if gdim == 3:
+            return kappa + (4.0 / 3.0) * mu
+        elif gdim == 2:
+            return kappa + mu
+    else:
+        if gdim == 3:
+            return (4.0 / 3.0) * mu
+        elif gdim == 2:
+            return mu
 
 
-def E_plane_strain(*, mu, kappa):
+def E_2d(*, mu, kappa, compressible=True):
     """
     Effective modulus under plane strain.
     epsilon_z = 0
     kappa = bulk modulus (3D)
     mu = shear modulus (3D)
     """
-    return 9.0 * mu * kappa / (kappa + 3.0 * mu)
+    if compressible:
+        return 4.0 * mu * kappa / (kappa + mu)
+    else:
+        # Incompressible case: E is determined by shear response since volumetric response is infinitely stiff
+        return 4.0 * mu
+
+
+def E_plane_strain(*, mu, kappa, compressible=True):
+    """
+    Effective modulus under plane strain.
+    epsilon_z = 0
+    kappa = bulk modulus (3D)
+    mu = shear modulus (3D)
+    """
+    if compressible:
+        return 9.0 * mu * kappa / (3.0 * kappa + mu)
+    else:
+        # Incompressible case: E is determined by shear response since volumetric response is infinitely stiff
+        return 3.0 * mu
 
 
 def mu_lame_from_kappa_mu(*, kappa, mu, model="3D"):
@@ -190,9 +217,16 @@ def pressure(
     compressible : bool, default=False
         Whether to use compressible formulation
     """
-    E_0 = E_uniaxial_stress(
-        mu=mu0, kappa=kappa0, compressible=compressible
-    )  # Base stiffness from uniaxial stress condition
+    if geometry in ["3d", "2d_plane_stress"]:
+        E_0 = E_uniaxial_stress(
+            mu=mu0, kappa=kappa0, compressible=compressible
+        )  # Base stiffness from uniaxial stress condition
+    elif geometry in ["2d", "2d_plane_strain"]:
+        E_0 = E_2d(
+            mu=mu0, kappa=kappa0, compressible=compressible
+        )  # Base stiffness for pure 2D case
+    else:
+        raise ValueError(f"Unknown geometry: {geometry}")
     gdim = 2 if geometry in ["2d", "2d_plane_stress", "2d_plane_strain"] else 3
     p_0 = E_0 * (Delta / H) / gdim  # Base pressure from uniaxial stress condition
     if not compressible:  # Incompressible case
@@ -356,19 +390,19 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
     compressible : bool, default=False
         Whether to use compressible formulation
     """
-    E_0 = E_uniaxial_stress(
-        mu=mu0, kappa=kappa0, compressible=compressible
-    )  # Base stiffness from uniaxial stress condition
+    if geometry in ["3d", "2d_plane_stress"]:
+        E_0 = E_uniaxial_stress(
+            mu=mu0, kappa=kappa0, compressible=compressible
+        )  # Base stiffness from uniaxial stress condition
+    elif geometry in ["2d", "2d_plane_strain"]:
+        E_0 = E_2d(
+            mu=mu0, kappa=kappa0, compressible=compressible
+        )  # Base stiffness for pure 2D case
+    else:
+        raise ValueError(f"Unknown geometry: {geometry}")
     if not compressible:  # Incompressible case
         if geometry == "2d":
             # Pure 2D incompressible equivalent modulus
-            R_ = R / H
-            return mu0 * R_**2 + E_0
-        elif geometry == "2d_plane_stress":
-            # 2D plane stress incompressible equivalent modulus
-            raise NotImplementedError("Plane stress formulation not implemented")
-        elif geometry == "2d_plane_strain":
-            # 2D plane strain incompressible equivalent modulus
             R_ = R / H
             return mu0 * R_**2 + E_0
         elif geometry == "3d":
@@ -379,19 +413,18 @@ def equivalent_modulus(*, mu0, H, R, kappa0=None, geometry="2d", compressible=Fa
     else:  # Compressible case
         if kappa0 is None:
             raise ValueError("kappa0 must be provided when compressible=True")
-        if geometry in ["2d", "2d_plane_strain"]:
+        if geometry == "2d":
             # 2D compressible equivalent modulus
             a_ = np.sqrt(3 * mu0 / (kappa0))
             R_ = R / H
-            return 2 * (kappa0 / 2) * (1 - (1 / (a_ * R_)) * np.tanh(a_ * R_)) + E_0
-        elif geometry == "2d_plane_stress":
-            # 2D plane stress compressible equivalent modulus
-            raise NotImplementedError("Plane stress formulation not implemented")
+            a_r_ = a_ * R_
+            return E_0 + kappa0 * (1 - (1 / a_r_) * np.tanh(a_r_))
         elif geometry == "3d":
             # 3D compressible equivalent modulus
             a_ = np.sqrt(3 * mu0 / (kappa0))
             R_ = R / H
-            return -kappa0 * (jv(2, 1j * a_ * R_) / jv(0, 1j * a_ * R_)).real + E_0
+            a_r_ = a_ * R_
+            return -kappa0 * (jv(2, 1j * a_r_) / jv(0, 1j * a_r_)).real + E_0
         else:
             raise ValueError(f"Unknown geometry: {geometry}")
 
@@ -1089,7 +1122,7 @@ def plot_equivalent_modulus_vs_aspect_ratio(
     plt.xlabel(r"$R/H$")
     plt.ylabel(r"$E_{eq}/E$")
     plt.legend()
-    plt.title("2D Equivalent Modulus vs Aspect Ratio")
+    plt.title("Equivalent Modulus vs Aspect Ratio")
     plt.grid(True, alpha=0.3)
     plt.savefig(f"{output_dir}Eeq_2D_aspect_ratio.pdf")
     plt.close()

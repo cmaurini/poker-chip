@@ -353,13 +353,15 @@ def plot_stress_strain_curve(
 ):
     """Plot stress-strain curves with optional Gent-Lindley overlay."""
     plt.figure()
+    mu = all_runs[0].get("mu", 1.0)
+    gdim = all_runs[0]["parameters"]["geometry"]["geometric_dimension"]
     # Overlay GL experimental branches if available
-    if "GL" == True:
+    if GL == True:
         f_I, f_II, f_III = gl_data.get_branch_functions()
         xr = gl_data.get_x_ranges()
         cols = gl_data.get_colors()
         if mu_factor == None:
-            mu_factor = 1 / gl_data.mu_GL
+            mu_factor = 1 / mu
         # mu_factor = 1.0 / gl_data.mu_GL /* 0.8
         print("Plotting GL branches with mu_factor =", mu_factor)
         plt.plot(
@@ -417,8 +419,8 @@ def plot_stress_strain_curve(
             rf"Plotting run with L/H={run['L'] / run['H']:.2f}, kappa/mu={run['kappa'] / run['mu']:.2f}, norm_value={norm_value:.2f}"
         )
         plt.plot(
-            run["average_strain"],
-            run["average_stress"],
+            np.array(run["average_strain"]),
+            np.array(run["average_stress"]) / run["mu"],
             "o-",
             label=rf"$R/H={run['L'] / run['H']:.1f}$, $\kappa/\mu={run['kappa'] / run['mu']:.0f}$",
             color=colors[i],
@@ -443,7 +445,7 @@ def plot_stress_strain_curve(
         # E_eq = (3 / 8) * run["mu"] * (run["L"] / run["H"]) ** 2
         plt.plot(
             xs,
-            E_eq * xs,
+            E_eq * xs / run["mu"],
             color=colors[i],
             # label=rf"Analytical $E_{{eq}}$",
             linewidth=1,
@@ -455,7 +457,8 @@ def plot_stress_strain_curve(
             xs,
             uniaxial_stress_strain(
                 xs, p_c=5 / 2 * run["mu"], mu=run["mu"], dimension=gdim
-            ),
+            )
+            / run["mu"],
             color="gray",
             # label="Uniaxial strain",
             linewidth=1,
@@ -483,16 +486,15 @@ def plot_stress_strain_curve(
             # label=rf"Critical load $R/H={run['L'] / run['H']:.1f}$",
         )
 
+    plt.title(rf"$\mu={all_runs[0]['mu']}$")
     plt.xlabel(r"$\Delta/H$")
     plt.ylabel(r"$F/\mu S$")
 
     # plt.title("Stress vs. Strain Comparison")
     plt.xlim(0, all_runs[0]["average_strain"][-1])
-    plt.ylim(0, 3.0)
+    plt.ylim(0, 3.0 / mu)
     # plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-    plt.title(
-        rf"FEM {('2d' if all_runs[0]['parameters']['geometry']['geometric_dimension'] else '3d')} "
-    )
+
     plt.legend(loc="lower right")
     # plt.legend(loc="lower right")
     plt.grid(True, alpha=0.3)
@@ -740,7 +742,8 @@ def main():
 
     # Run all analysis tasks
     print("Generating plots...")
-    plot_stress_strain_curve(all_runs, output_dir, gl_data=gl)
+    plot_gl = True
+    plot_stress_strain_curve(all_runs, output_dir, gl_data=gl, GL=plot_gl)
     plot_pressure_distribution(all_runs, output_dir)
     # plot_high_pressure_zone_length(all_runs, output_dir)
     plot_3d_max_pressure(all_runs, output_dir)

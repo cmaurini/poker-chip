@@ -36,7 +36,7 @@ from solvers import (
     evaluate_function,
 )
 from solvers.solver_configs import configure_3d_solver
-from mesh import mesh_bar, mesh_chip, box_mesh, mesh_chip_eight
+from mesh import mesh_bar, mesh_chip, box_mesh, mesh_chip_eight, mesh_bar_quarter
 from reference import formulas_paper
 
 comm = MPI.COMM_WORLD
@@ -139,7 +139,8 @@ def main(cfg: DictConfig):
     H = parameters.geometry.get("H", 0.1)
     h_div = parameters.geometry.get("h_div", 3.0)
     degree_u = parameters.fem.get("degree_u", 1)  # Use standard linear elements
-    lc = H / h_div  # Simplified mesh size calculation
+    lc = min(H, L) / h_div  # Simplified mesh size calculation
+    sym = parameters.get("sym", True)  # Symmetry boundary conditions
 
     # Derived quantities - use plane strain (3D-like) expressions for 2D, 3D expressions for 3D
     mu = formulas_paper.mu_lame_from_kappa_mu(kappa=k, mu=mu)
@@ -172,21 +173,21 @@ def main(cfg: DictConfig):
     # Create the mesh
 
     if gdim == 2:
-        if sliding == 0:
-            gmsh_model, tdim, tag_names = mesh_bar(
-                2 * L, 2 * H, lc, gdim, verbose=False
+        if sym:
+            gmsh_model, tdim, tag_names = mesh_bar_quarter(
+                L, H, lc, gdim, verbose=False
             )
+        elif sliding == 0:
+            gmsh_model, tdim, tag_names = mesh_bar(L, H, lc, gdim, verbose=False)
         elif sliding == 1:
-            gmsh_model, tdim, tag_names = mesh_bar(
-                2 * L, 2 * H, lc, gdim, verbose=False
-            )
+            gmsh_model, tdim, tag_names = mesh_bar(L, H, lc, gdim, verbose=False)
     elif gdim == 3:
         if sym:
             gmsh_model, tdim, tag_names = mesh_chip_eight(L, H, lc, gdim)
         elif sliding == 1:
-            gmsh_model, tdim, tag_names = box_mesh(L * 2, H * 2, L * 2, lc, gdim)
+            gmsh_model, tdim, tag_names = box_mesh(L, H, L, lc, gdim)
         else:
-            gmsh_model, tdim, tag_names = box_mesh(2 * L, 2 * H, 2 * L, lc, gdim)
+            gmsh_model, tdim, tag_names = box_mesh(L, H, L, lc, gdim)
     else:
         raise ValueError("Invalid geometric dimension specified.")
 
@@ -249,7 +250,6 @@ def main(cfg: DictConfig):
         facet_tags.values == tag_names["facets"]["bottom"]
     ]
     top_facets = facet_tags.indices[facet_tags.values == tag_names["facets"]["top"]]
-
     dofs_u_top = dolfinx.fem.locate_dofs_topological(
         V_u, tdim - 1, np.array(top_facets)
     )
@@ -257,87 +257,127 @@ def main(cfg: DictConfig):
         V_u, tdim - 1, np.array(bottom_facets)
     )
 
+    dofs_u_bottom_normal = dolfinx.fem.locate_dofs_topological(
+        V_u.sub(1), tdim - 1, facet_tags.find(tag_names["facets"]["bottom"])
+    )
+
+    # Robust facet tag lookup
+    def get_facet_indices(tag_key):
+        if tag_key in tag_names["facets"]:
+            return facet_tags.indices[facet_tags.values == tag_names["facets"][tag_key]]
+        else:
+            print(f"Warning: facet tag '{tag_key}' not found in tag_names['facets'].")
+            return np.array([])
+
+    def get_facet_dofs(sub, tag_key):
+        if tag_key in tag_names["facets"]:
+            return dolfinx.fem.locate_dofs_topological(
+                V_u.sub(sub), tdim - 1, facet_tags.find(tag_names["facets"][tag_key])
+            )
+        else:
+            print(f"Warning: facet tag '{tag_key}' not found in tag_names['facets'].")
+            return np.array([])
+
+    left_facets = get_facet_indices("left")
+    dofs_u_left_normal = get_facet_dofs(0, "left")
+    right_facets = get_facet_indices("right")
+    dofs_u_right_normal = get_facet_dofs(0, "right")
+    front_facets = get_facet_indices("front")
+    dofs_u_front_normal = get_facet_dofs(2, "front")
+    back_facets = get_facet_indices("back")
+    dofs_u_back_normal = get_facet_dofs(2, "back")
+
     # Define boundary conditions based on geometry and sliding type
-    if gdim == 2 and sliding == 1:
-        # 2D with sliding: constrain x-displacement on left/right faces
-        left_facets = facet_tags.indices[
-            facet_tags.values == tag_names["facets"]["left"]
-        ]
-        right_facets = facet_tags.indices[
-            facet_tags.values == tag_names["facets"]["right"]
-        ]
-        dofs_u_left = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0), tdim - 1, np.array(left_facets)
-        )
-        dofs_u_right = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0), tdim - 1, np.array(right_facets)
-        )
-        bcs_u = [
-            dolfinx.fem.dirichletbc(
-                u_bcs, dofs_u_bottom
-            ),  # bottom: prescribed displacement
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),  # top: prescribed displacement
-            dolfinx.fem.dirichletbc(0.0, dofs_u_left, V_u.sub(0)),  # left: u_x = 0
-            dolfinx.fem.dirichletbc(0.0, dofs_u_right, V_u.sub(0)),  # right: u_x = 0
-        ]
+    if gdim == 2:
+        if sym:
+            # 2D quarter domain with symmetry: constrain x-displacement on left, y-displacement on bottom
+            bcs_u = [
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_bottom_normal, V_u.sub(1)
+                ),  # bottom: u_y = 0 (blocked)
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_top
+                ),  # top: prescribed displacement
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_left_normal, V_u.sub(0)
+                ),  # left: u_x = 0 (symmetry)
+            ]
+        elif sliding == 1:
+            # 2D with sliding: constrain x-displacement on left/right faces
+            bcs_u = [
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_bottom
+                ),  # bottom: prescribed displacement
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_top
+                ),  # top: prescribed displacement
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_left_normal, V_u.sub(0)
+                ),  # left: u_x = 0
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_right_normal, V_u.sub(0)
+                ),  # right: u_x = 0
+            ]
+        else:
+            # Default case: prescribed displacement on both top and bottom
+            bcs_u = [
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_bottom
+                ),  # bottom: prescribed displacement
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_top
+                ),  # top: prescribed displacement
+            ]
+    elif gdim == 3:
+        if sliding == 1:
+            # 3D with sliding: constrain displacements on all side faces
+            bcs_u = [
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_bottom
+                ),  # bottom: prescribed displacement
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_top
+                ),  # top: prescribed displacement
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_left_normal, V_u.sub(0)
+                ),  # left: u_x = 0
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_right_normal, V_u.sub(0)
+                ),  # right: u_x = 0
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_front_normal, V_u.sub(2)
+                ),  # front: u_z = 0
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_back_normal, V_u.sub(2)
+                ),  # back: u_z = 0
+            ]
 
-    elif gdim == 3 and sliding == 1:
-        # 3D with sliding: constrain displacements on all side faces
-        dof_u_left = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["left"])
-        )
-        dof_u_right = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["right"])
-        )
-        dof_u_front = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(2), tdim - 1, facet_tags.find(tag_names["facets"]["front"])
-        )
-        dof_u_back = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(2), tdim - 1, facet_tags.find(tag_names["facets"]["back"])
-        )
-        bcs_u = [
-            dolfinx.fem.dirichletbc(
-                u_bcs, dofs_u_bottom
-            ),  # bottom: prescribed displacement
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),  # top: prescribed displacement
-            dolfinx.fem.dirichletbc(0.0, dof_u_left, V_u.sub(0)),  # left: u_x = 0
-            dolfinx.fem.dirichletbc(0.0, dof_u_right, V_u.sub(0)),  # right: u_x = 0
-            dolfinx.fem.dirichletbc(0.0, dof_u_front, V_u.sub(2)),  # front: u_z = 0
-            dolfinx.fem.dirichletbc(0.0, dof_u_back, V_u.sub(2)),  # back: u_z = 0
-        ]
+        elif sym:
+            bcs_u = [
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_bottom_normal, V_u.sub(1)
+                ),  # bottom: u_y = 0 (blocked)
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_top
+                ),  # top: prescribed displacement
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_left_normal, V_u.sub(0)
+                ),  # left: u_x = 0 (symmetry)
+                dolfinx.fem.dirichletbc(
+                    0.0, dofs_u_back_normal, V_u.sub(2)
+                ),  # back: u_z = 0 (symmetry)
+            ]
 
-    elif gdim == 3 and sym:
-        # 3D quarter-cylindrical domain with symmetry conditions
-        dof_u_left = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["left"])
-        )
-        dof_u_back = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(2), tdim - 1, facet_tags.find(tag_names["facets"]["back"])
-        )
-        dof_u_bottom_normal = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(1), tdim - 1, facet_tags.find(tag_names["facets"]["bottom"])
-        )
-        bcs_u = [
-            dolfinx.fem.dirichletbc(
-                0.0, dof_u_bottom_normal, V_u.sub(1)
-            ),  # bottom: u_y = 0 (blocked)
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),  # top: prescribed displacement
-            dolfinx.fem.dirichletbc(
-                0.0, dof_u_left, V_u.sub(0)
-            ),  # left: u_x = 0 (symmetry)
-            dolfinx.fem.dirichletbc(
-                0.0, dof_u_back, V_u.sub(2)
-            ),  # back: u_z = 0 (symmetry)
-        ]
-
-    else:
-        # Default case: prescribed displacement on both top and bottom
-        bcs_u = [
-            dolfinx.fem.dirichletbc(
-                u_bcs, dofs_u_bottom
-            ),  # bottom: prescribed displacement
-            dolfinx.fem.dirichletbc(u_bcs, dofs_u_top),  # top: prescribed displacement
-        ]
+        else:
+            # Default case: prescribed displacement on both top and bottom
+            bcs_u = [
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_bottom
+                ),  # bottom: prescribed displacement
+                dolfinx.fem.dirichletbc(
+                    u_bcs, dofs_u_top
+                ),  # top: prescribed displacement
+            ]
 
     k_ = dolfinx.fem.Constant(mesh, float(k))
     mu_ = dolfinx.fem.Constant(mesh, float(mu))
@@ -464,6 +504,7 @@ def main(cfg: DictConfig):
         "iterations": [],
         "ksp_reason": [],
         "residual_norm": [],
+        "parameters": OmegaConf.to_container(parameters, resolve=True),
     }
 
     with XDMFFile(comm, f"{prefix}.xdmf", "w", encoding=XDMFFile.Encoding.HDF5) as file:

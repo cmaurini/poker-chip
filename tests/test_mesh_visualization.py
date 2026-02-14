@@ -17,7 +17,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 # Import mesh generators
-from mesh.mesh_bar import mesh_bar
+from mesh.mesh_bar import mesh_bar, mesh_bar_quarter
 from mesh.mesh_box import box_mesh
 from mesh.mesh_chip import mesh_chip, mesh_chip_eight
 
@@ -173,6 +173,39 @@ def test_mesh_bar():
     assert True
 
 
+def test_mesh_quarter():
+    """Test quarter cylinder mesh generator (3D quarter cylinder)"""
+    comm = MPI.COMM_WORLD
+
+    L = 2.0  # Length
+    H = 0.5  # Height
+    lc = 0.1  # Characteristic length
+    tdim = 2  # Topological dimension
+    order = 1
+
+    # Generate mesh
+    gmsh_model, tdim, tag_names = mesh_bar_quarter(
+        L, H, lc, tdim, order=order, comm=comm
+    )
+
+    if comm.rank == 0:
+        # Convert to dolfinx mesh
+        mesh_data = model_to_mesh(gmsh_model, comm, rank=0, gdim=tdim)
+        mesh = mesh_data.mesh
+        facet_tags = mesh_data.facet_tags
+        mesh.facet_tag_names = {v: k for k, v in tag_names["facets"].items()}
+
+        # Save figure
+        title = f"Chip Mesh (Quarter)\nR={L}, H={H}, lc={lc}"
+        save_mesh_figure(mesh, title, "mesh_chip_quarter.png", facet_tags=facet_tags)
+
+        import gmsh
+
+        gmsh.finalize()
+
+    assert True
+
+
 def test_mesh_box():
     """Test box mesh generator (3D box)"""
     comm = MPI.COMM_WORLD
@@ -277,6 +310,9 @@ def test_mesh_chip_eight():
 if __name__ == "__main__":
     print("Testing mesh generators with visualization...")
     print(f"Output directory: {OUTPUT_DIR}")
+    print("-" * 60)
+
+    test_mesh_quarter()
     print("-" * 60)
 
     test_mesh_bar()

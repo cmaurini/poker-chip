@@ -16,17 +16,21 @@ def run_aspect_ratio_study():
 
     # Fixed parameters
     H = 1.0  # Keep H constant
-    h_div = 6  # Elements through thickness (small for faster runs)
-    gdim = 3  # 2D analysis
+    h_div = 4  # Elements through thickness (small for faster runs)
+    gdim = 3  # nD analysis
+    mu = [0.36]
+    k_values = [36, 50, 75, 100]
+    p_c = 5 / 2 * mu[0]  # Critical pressure for GL instability
 
     # Vary H to get different aspect ratios
     # Aspect ratios will be: L/H = 1.0/H
     L_values = [10]  #
     # L_values = [2, 3, 4, 5, 7.5, 10, 15]  # Gives aspect
-    k_values = [20.0, 30.0, 50.0, 200.0, 500.0]  # compressibility for 3D cases
+    #    k_values = [20.0, 30.0, 50.0, 200.0, 500.0]  # compressibility for 3D cases
     # k_values = [500]
     L_str = ",".join(map(str, L_values))
     k_str = ",".join(map(str, k_values))
+    mu_str = ",".join(map(str, mu))
     load_max = 0.5
     n_steps = 100
     # number of cores for parallel runs (set to 1 for serial runs)
@@ -59,9 +63,11 @@ def run_aspect_ratio_study():
         f"geometry.h_div={h_div}",
         f"geometry.geometric_dimension={gdim}",
         f"model.kappa={k_str}",
+        f"model.mu={mu_str}",
+        f"model.p_cav={p_c}",
         f"load_max={load_max}",
         f"n_steps={n_steps}",
-        "output_name=nonlinear_aspect_study",
+        "output_name=nonlinear_GL",
     ]
 
     print("\\nRunning command:")

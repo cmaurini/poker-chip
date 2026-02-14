@@ -1,4 +1,4 @@
-name"""Solver configurations for 3D elasticity problems.
+"""Solver configurations for 3D elasticity problems.
 
 This module contains preconfigured solver options for various iterative
 and direct solvers optimized for elasticity problems.

@@ -281,129 +281,113 @@ def main(cfg: DictConfig):
     alpha_ub.x.scatter_forward()
 
     # %% Define boundary conditions
-    bottom_facets = facet_tags.indices[
-        facet_tags.values == tag_names["facets"]["bottom"]
-    ]
-    top_facets = facet_tags.indices[facet_tags.values == tag_names["facets"]["top"]]
 
+    # --- Robust facet tag lookup helpers ---
+    def get_facet_indices(tag_key):
+        if tag_key in tag_names["facets"]:
+            return facet_tags.indices[facet_tags.values == tag_names["facets"][tag_key]]
+        else:
+            print(f"Warning: facet tag '{tag_key}' not found in tag_names['facets'].")
+            return np.array([])
+
+    def get_facet_dofs(V, sub, tag_key):
+        if tag_key in tag_names["facets"]:
+            return dolfinx.fem.locate_dofs_topological(
+                V.sub(sub), tdim - 1, facet_tags.find(tag_names["facets"][tag_key])
+            )
+        else:
+            print(f"Warning: facet tag '{tag_key}' not found in tag_names['facets'].")
+            return np.array([])
+
+    # --- Use helpers for all facet lookups ---
+    bottom_facets = get_facet_indices("bottom")
+    top_facets = get_facet_indices("top")
     dofs_u_top = dolfinx.fem.locate_dofs_topological(
         V_u, tdim - 1, np.array(top_facets)
     )
     dofs_u_bottom = dolfinx.fem.locate_dofs_topological(
         V_u, tdim - 1, np.array(bottom_facets)
     )
-
-    if gdim == 2:
-        left_facets = facet_tags.indices[
-            facet_tags.values == tag_names["facets"]["left"]
-        ]
-        right_facets = facet_tags.indices[
-            facet_tags.values == tag_names["facets"]["right"]
-        ]
-        dofs_u_left = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0), tdim - 1, np.array(left_facets)
-        )
-        dofs_u_right = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0), tdim - 1, np.array(right_facets)
-        )
-    # apply boudary conditions to box mesh
-    if gdim == 3 and sliding == 1:
-        # Get facet indices for each surface
-        dof_u_left = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["left"]),
-        )
-
-        dof_u_right = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["right"]),
-        )
-        dof_u_front = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(2),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["front"]),
-        )
-        dof_u_back = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(2),
-            tdim - 1,
-            facet_tags.find(tag_names["facets"]["back"]),
-        )
-
     dofs_alpha_top = dolfinx.fem.locate_dofs_topological(
         V_alpha, tdim - 1, np.array(top_facets)
     )
     dofs_alpha_bottom = dolfinx.fem.locate_dofs_topological(
         V_alpha, tdim - 1, np.array(bottom_facets)
     )
+    dofs_u_left = get_facet_dofs(V_u, 0, "left")
+    dofs_u_right = get_facet_dofs(V_u, 0, "right")
+    dofs_u_front = get_facet_dofs(V_u, 2, "front")
+    dofs_u_back = get_facet_dofs(V_u, 2, "back")
 
+    # --- Apply boundary conditions as before, but now robust to missing facets ---
     if gdim == 2 and sym:
-        # Symmetry boundary conditions for quarter domain
-        dof_u_left = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["left"])
-        )
-        dof_u_bottom_normal = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(1), tdim - 1, facet_tags.find(tag_names["facets"]["bottom"])
-        )
-        bcs_u = [
-            dolfinx.fem.dirichletbc(
-                0.0, dof_u_bottom_normal, V_u.sub(1)
-            ),  # bottom: u_y = 0 (blocked)
-            dolfinx.fem.dirichletbc(u_top, dofs_u_top),  # top: prescribed displacement
-            dolfinx.fem.dirichletbc(
-                0.0, dof_u_left, V_u.sub(0)
-            ),  # left: u_x = 0 (symmetry)
-        ]
+        dof_u_left = dofs_u_left
+        dof_u_bottom_normal = get_facet_dofs(V_u, 1, "bottom")
+        bcs_u = []
+        if dof_u_bottom_normal.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dof_u_bottom_normal, V_u.sub(1)))
+        if dofs_u_top.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(u_top, dofs_u_top))
+        if dof_u_left.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dof_u_left, V_u.sub(0)))
     elif gdim == 2 and sliding == 1:
-        bcs_u = [
-            dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_top, dofs_u_top),
-            dolfinx.fem.dirichletbc(0.0, dofs_u_left, V_u.sub(0)),
-            dolfinx.fem.dirichletbc(0.0, dofs_u_right, V_u.sub(0)),
-        ]
+        bcs_u = []
+        if dofs_u_bottom.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom))
+        if dofs_u_top.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(u_top, dofs_u_top))
+        if dofs_u_left.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dofs_u_left, V_u.sub(0)))
+        if dofs_u_right.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dofs_u_right, V_u.sub(0)))
+    elif gdim == 2:
+        left_facets = get_facet_indices("left")
+        right_facets = get_facet_indices("right")
+        dofs_u_left = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(0), tdim - 1, np.array(left_facets)
+        )
+        dofs_u_right = dolfinx.fem.locate_dofs_topological(
+            V_u.sub(0), tdim - 1, np.array(right_facets)
+        )
     elif gdim == 3 and sliding == 1:
-        bcs_u = [
-            dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_top, dofs_u_top),
-            dolfinx.fem.dirichletbc(0.0, dof_u_left, V_u.sub(0)),
-            dolfinx.fem.dirichletbc(0.0, dof_u_right, V_u.sub(0)),
-            dolfinx.fem.dirichletbc(0.0, dof_u_front, V_u.sub(2)),
-            dolfinx.fem.dirichletbc(0.0, dof_u_back, V_u.sub(2)),
-        ]
+        bcs_u = []
+        if dofs_u_bottom.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom))
+        if dofs_u_top.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(u_top, dofs_u_top))
+        if dofs_u_left.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dofs_u_left, V_u.sub(0)))
+        if dofs_u_right.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dofs_u_right, V_u.sub(0)))
+        if dofs_u_front.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dofs_u_front, V_u.sub(2)))
+        if dofs_u_back.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dofs_u_back, V_u.sub(2)))
     elif gdim == 3 and sym:
-        # Symmetry boundary conditions for quarter domain
-        dof_u_left = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(0), tdim - 1, facet_tags.find(tag_names["facets"]["left"])
-        )
-        dof_u_back = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(2), tdim - 1, facet_tags.find(tag_names["facets"]["back"])
-        )
-        dof_u_bottom_normal = dolfinx.fem.locate_dofs_topological(
-            V_u.sub(1), tdim - 1, facet_tags.find(tag_names["facets"]["bottom"])
-        )
-        bcs_u = [
-            dolfinx.fem.dirichletbc(
-                0.0, dof_u_bottom_normal, V_u.sub(1)
-            ),  # bottom: u_y = 0 (blocked)
-            dolfinx.fem.dirichletbc(u_top, dofs_u_top),  # top: prescribed displacement
-            dolfinx.fem.dirichletbc(
-                0.0, dof_u_left, V_u.sub(0)
-            ),  # left: u_x = 0 (symmetry)
-            dolfinx.fem.dirichletbc(
-                0.0, dof_u_back, V_u.sub(2)
-            ),  # back: u_z = 0 (symmetry)
-        ]
+        dof_u_left = dofs_u_left
+        dof_u_back = dofs_u_back
+        dof_u_bottom_normal = get_facet_dofs(V_u, 1, "bottom")
+        bcs_u = []
+        if dof_u_bottom_normal.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dof_u_bottom_normal, V_u.sub(1)))
+        if dofs_u_top.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(u_top, dofs_u_top))
+        if dof_u_left.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dof_u_left, V_u.sub(0)))
+        if dof_u_back.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(0.0, dof_u_back, V_u.sub(2)))
     else:
-        bcs_u = [
-            dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom),
-            dolfinx.fem.dirichletbc(u_top, dofs_u_top),
-        ]
+        bcs_u = []
+        if dofs_u_bottom.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(u_bottom, dofs_u_bottom))
+        if dofs_u_top.size > 0:
+            bcs_u.append(dolfinx.fem.dirichletbc(u_top, dofs_u_top))
 
-    bcs_alpha = [
-        dolfinx.fem.dirichletbc(zero_alpha, dofs_alpha_bottom),
-        dolfinx.fem.dirichletbc(zero_alpha, dofs_alpha_top),
-    ]
+    bcs_alpha = []
+    if dofs_alpha_bottom.size > 0:
+        bcs_alpha.append(dolfinx.fem.dirichletbc(zero_alpha, dofs_alpha_bottom))
+    if dofs_alpha_top.size > 0:
+        bcs_alpha.append(dolfinx.fem.dirichletbc(zero_alpha, dofs_alpha_top))
 
     bcs = {"bcs_u": bcs_u, "bcs_alpha": bcs_alpha}
 
